@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "pyparsec"
+version = "0.1.0"
+description = ""
+authors = ["khengari77 <khengari77@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+hypothesis = "^6.128.2"
+pytest = "^8.3.5"
+pipe = {git = "https://github.com/khengari77/Pipe.git"}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
