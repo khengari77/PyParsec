@@ -1,7 +1,6 @@
 # PyParsec: A Python Parser Combinator Library
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PyPI version](https://badge.fury.io/py/pyparsec.svg)](https://badge.fury.io/py/pyparsec)
 [![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 PyParsec is a Python library implementing parser combinators, inspired by Haskell's Parsec library. It aims to provide a flexible and composable way to build parsers for various input formats.  This library is currently under active development, with more features, tests, and examples planned.
