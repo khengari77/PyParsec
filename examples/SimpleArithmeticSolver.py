@@ -8,7 +8,7 @@ from pyparsec.Prim import pure, run_parser, try_parse
 try:
     from pipe import Pipe, where
 except ImportError:
-    raise ImportError("Install with 'pyparsec[examples]' to use this example.")
+    raise ImportError("You are missing the pipe package.\nInstall with 'pip install pipe@git+https://github.com/khengari77/Pipe.git@main' to use this example.")
 
 
 class UnOp:

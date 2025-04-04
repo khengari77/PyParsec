@@ -9,7 +9,7 @@ repository = "https://github.com/khengari77/PyParsec"
 keywords = ["parser", "combinators", "parsing"]
 
 [tool.poetry.dependencies]
-python = ">=3.8"  # Wider compatibility
+python = "^3.8"  # Wider compatibility
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.3.5"  # Core dev dependency

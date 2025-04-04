@@ -22,11 +22,7 @@ You can install PyParsec directly from git using pip (I hope it'll be soon avail
 pip install git+https://github.com/khengari77/PyParsec.git
 ```
 
-To run the examples provided in the `examples/` directory, you might need additional dependencies. You can install them using:
-
-```bash
-pip install "git+https://github.com/khengari77/PyParsec.git#egg=pyparsec[examples]"
-```
+To run the examples provided in the `examples/` directory, you might need additional dependencies.
 
 ## Basic Usage: Parsing an Integer
 
