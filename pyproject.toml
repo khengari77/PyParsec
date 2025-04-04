@@ -17,6 +17,9 @@ pytest = "^8.3.5"  # Core dev dependency
 [tool.poetry.group.examples.dependencies]  # Optional group for examples
 pipe = { git = "https://github.com/khengari77/Pipe.git", branch = "main" }
 
+[tool.poetry.extras]
+examples = ["pipe"]  # Map the 'examples' extra to the 'pipe' dependency
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
