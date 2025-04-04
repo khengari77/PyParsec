@@ -85,7 +85,7 @@ class Parsec(Generic[T]):
         return Parsec(combined)
 
     # Sequence (*>)
-    def __gt__(self, other: 'Parsec[T]') -> 'Parsec[T]':
+    def __lt__(self, other: 'Parsec[T]') -> 'Parsec[T]':
         def combined(state: State) -> Result[T]:
             value1, state1, err1 = self(state)
             if err1:
@@ -98,7 +98,7 @@ class Parsec(Generic[T]):
             return value1, state2, None
         return Parsec(combined)
 
-    def __lt__(self, other: 'Parsec[T]') -> 'Parsec[T]':
+    def __gt__(self, other: 'Parsec[T]') -> 'Parsec[T]':
         def combined(state: State) -> Result[T]:
             _, state1, err1 = self(state)
             if err1:
