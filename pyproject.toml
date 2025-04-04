@@ -1,17 +1,25 @@
 [tool.poetry]
-name = "pyparsec"
+name = "pyparsec"  # Lowercase name
 version = "0.1.0"
-description = ""
+description = "A Python parser combinator library inspired by Haskell's Parsec."
 authors = ["khengari77 <khengari77@gmail.com>"]
+license = "MIT"
 readme = "README.md"
+repository = "https://github.com/khengari77/PyParsec"
+keywords = ["parser", "combinators", "parsing"]
 
 [tool.poetry.dependencies]
-python = "^3.10"
-hypothesis = "^6.128.2"
-pytest = "^8.3.5"
-pipe = {git = "https://github.com/khengari77/Pipe.git"}
+python = ">=3.8"  # Wider compatibility
 
+[tool.poetry.group.test.dependencies]
+pytest = "^8.3.5"  # Core dev dependency
+
+[tool.poetry.group.examples.dependencies]  # Optional group for examples
+pipe = { git = "https://github.com/khengari77/Pipe.git", branch = "main" }
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.packages]
+include = "pyparsec"  # Explicitly include the renamed directory

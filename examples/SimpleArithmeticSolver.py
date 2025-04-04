@@ -1,10 +1,12 @@
-from PyParsec.Parsec import Parsec, State, Result, ParseError
-from PyParsec.Combinators import many1, choice, option_maybe
-from PyParsec.Char import digit, char, spaces, any_char
-from PyParsec.Prim import pure, run_parser, try_parse
+from pyparsec.Parsec import Parsec, State, Result, ParseError
+from pyparsec.Combinators import many1, choice, option_maybe
+from pyparsec.Char import digit, char, spaces, any_char
+from pyparsec.Prim import pure, run_parser, try_parse
 
-from pipe import Pipe, where
-
+try:
+    from pipe import Pipe, where
+except ImportError:
+    raise ImportError("Install with 'pyparsec[examples]' to use this example.")
 
 class UnOp:
     def __init__(self, op: str):
