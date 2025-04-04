@@ -1,12 +1,12 @@
+from functools import partial
+
 from pyparsec.Parsec import Parsec, State, Result, ParseError
 from pyparsec.Combinators import many1, choice, option_maybe
 from pyparsec.Char import digit, char, spaces, any_char
 from pyparsec.Prim import pure, run_parser, try_parse
 
-try:
-    from pipe import Pipe, where
-except ImportError:
-    raise ImportError("Install with 'pyparsec[examples]' to use this example.")
+from pipe import Pipe, where
+
 
 class UnOp:
     def __init__(self, op: str):
@@ -83,7 +83,6 @@ class SubExpr:
     def __call__(self):
         return self.expr
 
-
 binop: Parsec[BinOp] = lambda op: char(op) >> (lambda _: pure(BinOp(op)))
 unop: Parsec[UnOp] = lambda op: char(op) >> (lambda _: pure(UnOp(op)))
 
@@ -93,7 +92,6 @@ add = binop('+')
 subtract = binop('-')
 multiply = binop('*')
 divide = binop('/')
-
 
 def subexpr() -> Parsec[SubExpr]:
     def parse_subexpr(state: State) -> Result[SubExpr]:
@@ -117,14 +115,10 @@ def subexpr() -> Parsec[SubExpr]:
         return SubExpr(expr), new_state, None
     return option_maybe(negative | positive) & Parsec(parse_subexpr)
 
-
 integer = (option_maybe(negative | positive)
             & many1(digit()) >> (lambda x: pure(int(''.join(x)))))
+head = Pipe(lambda x: x[0])
 
-expression = (try_parse(integer)
-              | try_parse(subexpr())
-              | try_parse(choice([add, subtract, multiply, divide]))
-              ) < spaces()
 
 def flatten(l):
     for i in l:
@@ -132,6 +126,8 @@ def flatten(l):
             yield from flatten(i)
         else:
             yield i
+
+
 @Pipe
 def resolveSubExpr(tokens):
     for i, token in enumerate(tokens):
@@ -162,11 +158,16 @@ def resolveBinOp(tokens, ops):
     return tokens
 
 
-head = Pipe(lambda x: x[0])
-evaluate = (head | Pipe(lambda x: list(flatten(x))) | where(lambda x: x is not None) | Pipe(list)
-            | resolveSubExpr | resolveUnop | resolveBinOp('/*') | resolveBinOp('+-') | head)
+expression = (try_parse(integer)
+              | try_parse(subexpr())
+              | try_parse(choice([add, subtract, multiply, divide]))
+              ) < spaces()
+tokenize = Pipe(partial(run_parser, many1(expression)))
 
-resolve = expression >> evaluate
+evaluate = (tokenize | Pipe(lambda x: list(flatten(x)))
+            | where(lambda x: x is not None) | Pipe(list)
+            | resolveSubExpr | resolveUnop
+            | resolveBinOp('/*') | resolveBinOp('+-') | head)
 
 if __name__ == "__main__":
     test_cases = [
@@ -183,8 +184,7 @@ if __name__ == "__main__":
     for expr in test_cases:
         results = []
         try:
-            result = run_parser(resolve, expr)
+            result = expr | evaluate
             print(f"{expr} = {result}")
         except ValueError as e:
             print(f"{expr}: {e}")
-
