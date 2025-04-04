@@ -5,7 +5,10 @@ from pyparsec.Combinators import many1, choice, option_maybe
 from pyparsec.Char import digit, char, spaces, any_char
 from pyparsec.Prim import pure, run_parser, try_parse
 
-from pipe import Pipe, where
+try:
+    from pipe import Pipe, where
+except ImportError:
+    raise ImportError("Install with 'pyparsec[examples]' to use this example.")
 
 
 class UnOp:
