@@ -107,15 +107,14 @@ def _many_accum(
 
 def many(p: Parsec[T]) -> Parsec[List[T]]:
     """Parse zero or more occurrences of `p`."""
-    # Accumulator function: prepends item to list (builds in reverse)
-    # (item_parsed, list_built_so_far_reversed) -> new_list_built_so_far_reversed
-    acc_reversed_list = lambda item, lst: [item] + lst
+    # Accumulator function: appends item to list (builds in forward order)
+    # (item_parsed, list_built_so_far) -> new_list_built_so_far
+    acc_list_append = lambda item, lst: lst + [item] 
     
-    # _many_accum will give a Parsec[List[T]] where the list is reversed
-    reversed_list_parser = _many_accum(acc_reversed_list, p, []) # Empty list is initial/empty value
-    
-    # Bind to reverse the list
-    return reversed_list_parser.bind(lambda rlist: pure(list(reversed(rlist))))
+    # _many_accum will give a Parsec[List[T]] where the list is already in the correct order.
+    # The initial value for the accumulator is an empty list.
+    return _many_accum(acc_list_append, p, [])
+
 
 def skip_many(parser: Parsec[Any]) -> Parsec[None]:
     """Skips zero or more occurrences of `parser`."""

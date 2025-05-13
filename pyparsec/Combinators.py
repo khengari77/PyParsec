@@ -224,21 +224,11 @@ def parser_trace(label: str) -> Parsec[None]:
         return None, state, None
     return Parsec(parse)
 
+
 # 25. parserTraced: Debugging parser that traces execution and backtracking
 def parser_traced(label: str, p: Parsec[T]) -> Parsec[T]:
     """
     Prints the state with a label, applies p, and indicates backtracking if p fails.
     """
-    def backtrack_parser(state: State) -> Result[T]:
-        print(f"{label} backtracked")
-        return None, state, ParseError(state.pos, label)
-    
-    def parse(state: State) -> Result[T]:
-        # Run parser_trace manually without binding its result
-        _, trace_state, trace_err = parser_trace(label)(state)
-        if trace_err:
-            return None, trace_state, trace_err
-        # Run p | backtrack_parser on the same state
-        return (p | Parsec(backtrack_parser))(trace_state)
-    
-    return Parsec(parse)
+    backtrack_message_parser = parser_trace(f"{label} backtracked") >> fail(f"{label} failed after trace")
+    return parser_trace(label) >> (try_parse(p) | backtrack_message_parser)

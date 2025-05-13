@@ -1,6 +1,6 @@
 from typing import Callable, List
 from .Parsec import Parsec, State, ParseError, SourcePos, Result 
-from .Prim import token, tokens, tokens_prime, pure, many, fail, try_parse  # Assumed from prior implementation
+from .Prim import token, tokens, tokens_prime, pure, many, fail, try_parse, skip_many  # Assumed from prior implementation
 
 # Helper function: Parses a single character
 def char(c: str) -> Parsec[str]:
@@ -34,7 +34,7 @@ def none_of(cs: List[str]) -> Parsec[str]:
 # 3. spaces: Skips zero or more whitespace characters
 def spaces() -> Parsec[None]:
     """Skips zero or more whitespace characters."""
-    return many(space()).bind(lambda _: pure(None)).label("white space")
+    return skip_many(space()).label("white space")
 
 # 4. space: Parses a whitespace character
 def space() -> Parsec[str]:
