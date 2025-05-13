@@ -1,5 +1,5 @@
 from typing import List, Optional, Callable, Any, TypeVar
-from .Parsec import Parsec, State, ParseError, SourcePos, Result, T, U
+from .Parsec import Parsec, State, ParseError, SourcePos, Result, T, U, MessageType
 from .Prim import pure, fail, try_parse, token, many, look_ahead
 
 
@@ -30,10 +30,10 @@ def count(n: int, p: Parsec[T]) -> Parsec[List[T]]:
         for _ in range(n):
             value, new_state, err = p(current_state)
             if err or value is None:
-                return None, state, err or ParseError(current_state.pos, "count failed")
+                return None, state, err or ParseError.new_message(current_state.pos, MessageType.MESSAGE, "count failed")
             results.append(value)
             current_state = new_state
-        return results, current_state, None
+        return results, current_state, ParseError.new_unknown(current_state.pos)
     return Parsec(parse)
 
 # 3. between: Parses an opening parser, a main parser, and a closing parser
@@ -193,8 +193,8 @@ def not_followed_by(p: Parsec[Any]) -> Parsec[None]:
     def parse(state: State) -> Result[None]:
         value, new_state, err = try_parse(p)(state)
         if value is not None and not err:
-            return None, state, ParseError(state.pos, f"unexpected {value}")
-        return None, state, None
+            return None, state, ParseError.new_message(state.pos, MessageType.UNEXPECT, str(value))
+        return None, state, ParseError.new_unknown(state.pos)
     return try_parse(parse)
 
 # 22. manyTill: Parses p zero or more times until end succeeds
@@ -218,7 +218,7 @@ def parser_trace(label: str) -> Parsec[None]:
     """
     def parse(state: State) -> Result[None]:
         print(f"{label}: \"{state.input}\"")
-        return None, state, None
+        return None, state, ParseError.new_unknown(state.pos)
     return Parsec(parse)
 
 

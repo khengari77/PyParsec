@@ -1,5 +1,5 @@
-from typing import Callable, List
-from .Parsec import Parsec, State, ParseError, SourcePos, Result 
+from typing import Callable, List, Optional
+from .Parsec import Parsec, State, ParseError, SourcePos, Result, MessageType 
 from .Prim import token, tokens, tokens_prime, pure, many, fail, try_parse, skip_many  # Assumed from prior implementation
 
 # Helper function: Parses a single character
@@ -10,16 +10,14 @@ def char(c: str) -> Parsec[str]:
 # Core function: Succeeds if the character satisfies a predicate
 def satisfy(f: Callable[[str], bool]) -> Parsec[str]:
     """Succeeds for any character where f returns True. Returns the parsed character."""
-    def parse(state: State) -> Result[str]:
-        if not state.input:
-            return None, state, ParseError(state.pos, "unexpected EOF")
-        token = state.input[0]
-        if f(token):
-            new_pos = state.pos.update(token)
-            new_state = State(state.input[1:], new_pos, state.user)
-            return token, new_state, None
-        return None, state, ParseError(state.pos, f"unexpected '{token}'")
-    return Parsec(parse)
+
+    def show_char_token(char_val: str) -> str:
+        return char_val if char_val != "" else "EOF"
+
+    def test_char_token(char_val: str) -> Optional[str]:
+        return char_val if f(char_val) else None
+
+    return token(show_char_token, test_char_token)
 
 # 1. oneOf: Parses any character in the provided list
 def one_of(cs: List[str]) -> Parsec[str]:
