@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional, Tuple, List, TypeVar, Generic
 
 T = TypeVar('T')  # Generic type for parser results
+U = TypeVar('U')
 
 @dataclass
 class SourcePos:
@@ -40,23 +41,29 @@ Result = Tuple[Optional[T], State, Optional[ParseError]]
 
 class Parsec(Generic[T]):
     """A parser combinator that processes input and returns a result."""
-    def __init__(self, parse_fn: Callable[[State], Result[T]]):
+    def __init__(self, parse_fn: Callable[[State], Result[T]]): # Input function produces Result[T]
         self.parse_fn = parse_fn
 
-    def __call__(self, state: State) -> Result[T]:
+    def __call__(self, state: State) -> Result[T]: # Parsec[T] produces Result[T]
         return self.parse_fn(state)
 
     # Monadic bind (>>=)
-    def bind(self, f: Callable[[T], 'Parsec[T]']) -> 'Parsec[T]':
-        def parse(state: State) -> Result[Any]:
-            value, new_state, err = self(state)
+    def bind(self, f: Callable[[T], 'Parsec[U]']) -> 'Parsec[U]':
+        # f takes a T (result of self) and returns a new Parsec[U]
+        # The whole bind operation then results in a Parsec[U]
+        def parse(state: State) -> Result[U]: # The inner parse function will produce Result[U]
+            value, new_state, err = self(state) # self(state) produces Result[T]
             if err:
+                # If the first parser failed, propagate its state and error.
+                # The 'value' part of the tuple should be None, matching Result[U]'s Optional[U].
                 return None, new_state, err
-            if value is None:
-                return None, new_state, ParseError(new_state.pos, "No value")
-            next_parser = f(value)
-            return next_parser(new_state)
+
+            # If the first parser succeeded (err is None), its 'value' (which is of type T)
+            # is passed to the function f to get the next parser (which is Parsec[U]).
+            next_parser: 'Parsec[U]' = f(value)
+            return next_parser(new_state) # Run the next parser, which produces Result[U]
         return Parsec(parse)
+
 
     # Alternative (<|>)
     def __or__(self, other: 'Parsec[T]') -> 'Parsec[T]':
@@ -70,60 +77,68 @@ class Parsec(Generic[T]):
             return None, new_state, err
         return Parsec(parse)
 
-    # Sequence (<*>)
-    def __and__(self, other: 'Parsec[T]') -> 'Parsec[T]':
-        def combined(state: State) -> Result[T]:
-            value1, state1, err1 = self(state)
+    # Sequence (&)
+    # self: Parsec[T], other: Parsec[U] -> result: Parsec[Tuple[T, U]]
+    def __and__(self, other: 'Parsec[U]') -> 'Parsec[Tuple[T, U]]': # Now returns a Parsec of a Tuple
+        def combined(state: State) -> Result[Tuple[T, U]]:
+            value1, state1, err1 = self(state) # self is Parsec[T]
             if err1:
                 return None, state1, err1
 
-            value2, state2, err2 = other(state1)
+            value2, state2, err2 = other(state1) # other is Parsec[U]
             if err2:
                 return None, state2, err2
 
-            return (value1, value2), state2, None
+            return (value1, value2), state2, None # Result is Tuple[T, U]
         return Parsec(combined)
 
     # Sequence (*>)
-    def __lt__(self, other: 'Parsec[T]') -> 'Parsec[T]':
-        def combined(state: State) -> Result[T]:
-            value1, state1, err1 = self(state)
+    # self: Parsec[T], other: Parsec[U] -> result: Parsec[U]
+    def __gt__(self, other: 'Parsec[U]') -> 'Parsec[U]':
+        def combined(state: State) -> Result[U]:
+            _, state1, err1 = self(state) # self is Parsec[T], its value is discarded
             if err1:
                 return None, state1, err1
 
-            _, state2, err2 = other(state1)
-            if err2:
-                return None, state2, err2
-            
-            return value1, state2, None
-        return Parsec(combined)
-
-    def __gt__(self, other: 'Parsec[T]') -> 'Parsec[T]':
-        def combined(state: State) -> Result[T]:
-            _, state1, err1 = self(state)
-            if err1:
-                return None, state1, err1
-
-            value2, state2, err2 = other(state1)
+            value2, state2, err2 = other(state1) # other is Parsec[U]
             if err2:
                 return None, state2, err2
 
             return value2, state2, None
         return Parsec(combined)
 
+    # Sequence (<*)
+    # self: Parsec[T], other: Parsec[U] -> result: Parsec[T]
+    def __lt__(self, other: 'Parsec[U]') -> 'Parsec[T]':
+        def combined(state: State) -> Result[T]:
+            value1, state1, err1 = self(state) # self is Parsec[T]
+            if err1:
+                return None, state1, err1
+
+            _, state2, err2 = other(state1) # other is Parsec[U], its value is discarded
+            if err2:
+                return None, state2, err2
+            
+            return value1, state2, None
+        return Parsec(combined)
+
+
+    # Monadic bind also available as >>
+    def __rshift__(self, f: Callable[[T], 'Parsec[U]']) -> 'Parsec[U]': # Changed other to f for clarity
+        return self.bind(f)
+    
     def __invert__(self) -> 'Parsec[T]':
         def inverted(state: State) -> Result[T]:
             value, new_state, err = self(state)
             if err:
                 return None, new_state, err
-            if value is None:
+            if value is None: # This check is still problematic if None is a valid success value
                 return None, new_state, ParseError(new_state.pos, "No value")
-            
+            # What should it return on success? Your current code has no explicit return here for success.
+            # Assuming it's meant to be a pass-through if checks pass:
+            return value, new_state, None # Or whatever the intended logic is
         return Parsec(inverted)
 
-
-    def __rshift__(self, other: 'Parsec[T]') -> 'Parsec[T]':
-        return self.bind(other)
 
     # Label (<?>)
     def label(self, msg: str) -> 'Parsec[T]':
