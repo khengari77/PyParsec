@@ -1,5 +1,5 @@
 from typing import Callable, List, Optional
-from .Parsec import Parsec, State, ParseError, SourcePos, Result, MessageType 
+from .Parsec import Parsec, State, ParseError, SourcePos, ParseResult, MessageType 
 from .Prim import token, tokens, tokens_prime, pure, many, fail, try_parse, skip_many  # Assumed from prior implementation
 
 # Helper function: Parses a single character
@@ -104,12 +104,12 @@ def string(s: str) -> Parsec[str]:
     """Parses the exact string s and returns it."""
     def show_tokens(tokens: str) -> str:
         return f"'{tokens}'"
-    return tokens(show_tokens, lambda pos, _: pos.update(s), list(s)).label(f"'{s}'")
+    return tokens(show_tokens, lambda pos, text: pos.update(text), list(s)).label(f"'{s}'")
 
 # 18. string': Parses a string without consuming input on success
 def string_prime(s: str) -> Parsec[str]:
     """Parses the string s without consuming input if successful."""
     def show_tokens(tokens: str) -> str:
         return f"'{tokens}'"
-    return tokens_prime(show_tokens, lambda pos, _: pos.update(s), list(s)).label(f"'{s}'")
+    return tokens_prime(show_tokens, lambda pos, text: pos.update(text), list(s)).label(f"'{s}'")
 

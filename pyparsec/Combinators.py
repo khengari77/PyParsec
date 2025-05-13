@@ -1,5 +1,5 @@
 from typing import List, Optional, Callable, Any, TypeVar
-from .Parsec import Parsec, State, ParseError, SourcePos, Result, T, U, MessageType
+from .Parsec import Parsec, State, ParseError, SourcePos, ParseResult, T, U, MessageType
 from .Prim import pure, fail, try_parse, token, many, look_ahead
 
 
@@ -18,24 +18,50 @@ def choice(parsers: List[Parsec[T]]) -> Parsec[T]:
 
 # 2. count: Parses n occurrences of a parser
 def count(n: int, p: Parsec[T]) -> Parsec[List[T]]:
-    """
-    Parses exactly n occurrences of parser p, returning a list of results.
-    Returns an empty list if n <= 0.
-    """
     if n <= 0:
         return pure([])
-    def parse(state: State) -> Result[List[T]]:
+    def parse(state_initial: State) -> ParseResult[List[T]]: # Changed
         results = []
-        current_state = state
-        for _ in range(n):
-            value, new_state, err = p(current_state)
-            if err or value is None:
-                return None, state, err or ParseError.new_message(current_state.pos, MessageType.MESSAGE, "count failed")
-            results.append(value)
-            current_state = new_state
-        return results, current_state, ParseError.new_unknown(current_state.pos)
-    return Parsec(parse)
+        current_state = state_initial
+        consumed_overall = False
+        last_error: Optional[ParseError] = ParseError.new_unknown(state_initial.pos)
 
+        for i in range(n):
+            res_p = p(current_state) # res_p is ParseResult[T]
+            consumed_overall = consumed_overall or res_p.consumed
+
+            if res_p.error and not res_p.error.is_unknown():
+                # p failed with a known error
+                # Propagate error with its consumption status, or overall if p was empty error
+                if res_p.consumed:
+                    return ParseResult.error_consumed(res_p.state, res_p.error)
+                else: # p's error was empty, but count might have consumed overall
+                    if consumed_overall:
+                         return ParseResult.error_consumed(current_state, res_p.error) # Error at current_state before this failing p
+                    else:
+                         return ParseResult.error_empty(state_initial, res_p.error)
+
+
+            if res_p.value is None: # Should be caught by above if error is significant
+                 # Failsafe: if no value and error is unknown, create a generic failure message
+                err_msg = ParseError.new_message(current_state.pos, MessageType.MESSAGE, f"count: parser failed at iteration {i+1}")
+                if consumed_overall:
+                    return ParseResult.error_consumed(current_state, err_msg)
+                else:
+                    return ParseResult.error_empty(state_initial, err_msg)
+
+
+            results.append(res_p.value)
+            current_state = res_p.state
+            last_error = ParseError.merge(last_error, res_p.error or ParseError.new_unknown(current_state.pos))
+
+
+        # All n iterations succeeded
+        if consumed_overall:
+            return ParseResult.ok_consumed(results, current_state, last_error)
+        else:
+            return ParseResult.ok_empty(results, current_state, last_error) # current_state would be state_initial
+    return Parsec(parse)
 # 3. between: Parses an opening parser, a main parser, and a closing parser
 def between(open: Parsec[Any], close: Parsec[Any], p: Parsec[T]) -> Parsec[T]:
     """
@@ -183,19 +209,19 @@ def any_token() -> Parsec[str]:
     """
     Accepts any single character from the input, returning it.
     """
-    return token(lambda t: str(t), lambda t: t)  # Assumes token is from previous implementation
+    return token(lambda t: str(t), lambda t: t if t else None)  # Assumes token is from previous implementation
 
 # 21. notFollowedBy: Succeeds if a parser fails without consuming input
 def not_followed_by(p: Parsec[Any]) -> Parsec[None]:
-    """
-    Succeeds if parser p fails without consuming input, does not consume input itself.
-    """
-    def parse(state: State) -> Result[None]:
-        value, new_state, err = try_parse(p)(state)
-        if value is not None and not err:
-            return None, state, ParseError.new_message(state.pos, MessageType.UNEXPECT, str(value))
-        return None, state, ParseError.new_unknown(state.pos)
-    return try_parse(parse)
+    # Attempt p; if it succeeds, not_followed_by fails.
+    # If p fails, not_followed_by succeeds.
+    # Crucially, not_followed_by should not consume input.
+    attempt_p_then_fail = try_parse(p).bind(
+        lambda x: fail(f"unexpected {x}") # If p succeeded, this branch is taken, then fail creates an empty error
+    )
+    succeed_empty = pure(None) # If p failed (handled by try_parse), this branch is taken by <|>
+
+    return attempt_p_then_fail | succeed_empty
 
 # 22. manyTill: Parses p zero or more times until end succeeds
 def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[List[T]]:
@@ -212,20 +238,26 @@ def look_ahead(p: Parsec[T]) -> Parsec[T]:
     return look_ahead(p)
 
 # 24. parserTrace: Debugging parser that prints the remaining input
-def parser_trace(label: str) -> Parsec[None]:
-    """
-    Prints the remaining input with a label for debugging, does not consume input.
-    """
-    def parse(state: State) -> Result[None]:
-        print(f"{label}: \"{state.input}\"")
-        return None, state, ParseError.new_unknown(state.pos)
+def parser_trace(label_str: str) -> Parsec[None]: # Renamed label to label_str
+    def parse(state: State) -> ParseResult[None]:
+        print(f"{label_str}: \"{state.input[:30]}{'...' if len(state.input)>30 else ''}\" at {state.pos}")
+        # parser_trace does not consume and always "succeeds" with None (empty ok)
+        return ParseResult.ok_empty(None, state, ParseError.new_unknown(state.pos))
     return Parsec(parse)
 
-
 # 25. parserTraced: Debugging parser that traces execution and backtracking
-def parser_traced(label: str, p: Parsec[T]) -> Parsec[T]:
-    """
-    Prints the state with a label, applies p, and indicates backtracking if p fails.
-    """
-    backtrack_message_parser = parser_trace(f"{label} backtracked") >> fail(f"{label} failed after trace")
-    return parser_trace(label) >> (try_parse(p) | backtrack_message_parser)
+def parser_traced(label_str: str, p: Parsec[T]) -> Parsec[T]:
+    # parser_trace >> (try_parse(p) | (parser_trace(f"{label_str} backtracked") >> fail(f"{label_str} failed")))
+    # This composition should work fine as underlying ops are updated.
+    trace_enter = parser_trace(label_str)
+    
+    def on_backtrack(_): # Value from parser_trace is None
+        # This fail will produce an empty error because it's on the RHS of an OR
+        # and parser_trace(backtracked) is empty.
+        return fail(f"{label_str} backtracked and parser failed")
+
+    # if p fails after consuming, try_parse turns it into an empty error.
+    # The choice operator `|` will then try the backtrack path.
+    # If p succeeds, its result is passed through.
+    return trace_enter >> (try_parse(p) | (parser_trace(f"{label_str} backtracked") >> Parsec(lambda s: on_backtrack(s))))
+

@@ -5,6 +5,14 @@ from enum import Enum, auto
 T = TypeVar('T')  # Generic type for parser results
 U = TypeVar('U')
 
+# pyparsec/Parsec.py (or a new types.py)
+
+from dataclasses import dataclass
+from typing import Generic, Tuple, Optional, Any
+
+
+
+
 @dataclass
 class SourcePos:
     """Represents the current position in the input stream."""
@@ -146,135 +154,171 @@ class ParseError:
         combined_messages = sorted(list(set(err1.messages + err2.messages)))
         return ParseError(err1.pos, combined_messages)
 
-# Result type remains the same conceptually, but ParseError is now richer
-Result = Tuple[Optional[T], State, Optional[ParseError]]
+@dataclass
+class Reply(Generic[T]):
+    value: Optional[T]
+    state: State # The state *after* this part of the parse attempt
+    error: Optional[ParseError]
+    # is_ok: bool # Could be implicit: value is not None and (error is None or error.is_unknown())
+
+# ParseResult of a parser function, now explicitly stating consumption
+@dataclass
+class ParseResult(Generic[T]):
+    reply: Reply[T]
+    consumed: bool # True if input was consumed, False otherwise
+
+    @property
+    def value(self) -> Optional[T]:
+        return self.reply.value
+
+    @property
+    def state(self) -> State:
+        return self.reply.state
+
+    @property
+    def error(self) -> Optional[ParseError]:
+        return self.reply.error
+
+    @staticmethod
+    def ok_consumed(value: T, new_state: State, err: Optional[ParseError]) -> 'ParseResult[T]':
+        return ParseResult(Reply(value, new_state, err), True)
+
+    @staticmethod
+    def ok_empty(value: T, original_state: State, err: Optional[ParseError]) -> 'ParseResult[T]':
+        # For ok_empty, the state in Reply should be the original_state
+        # if we strictly follow Parsec, though often new_state is passed if value depends on it.
+        # Let's keep it simple: state reflects the state *after* this logical step.
+        return ParseResult(Reply(value, original_state, err), False)
+
+    @staticmethod
+    def error_consumed(new_state: State, err: ParseError) -> 'ParseResult[Any]': # Use Any for error results
+        return ParseResult(Reply(None, new_state, err), True)
+
+    @staticmethod
+    def error_empty(original_state: State, err: ParseError) -> 'ParseResult[Any]':
+        return ParseResult(Reply(None, original_state, err), False)
 
 class Parsec(Generic[T]):
     """A parser combinator that processes input and returns a result."""
-    def __init__(self, parse_fn: Callable[[State], Result[T]]): # Input function produces Result[T]
+    def __init__(self, parse_fn: Callable[[State], ParseResult[T]]): # Input function produces ParseResult[T]
         self.parse_fn = parse_fn
 
-    def __call__(self, state: State) -> Result[T]: # Parsec[T] produces Result[T]
+    def __call__(self, state: State) -> ParseResult[T]: # Parsec[T] produces ParseResult[T]
         return self.parse_fn(state)
 
     # Monadic bind (>>=)
     def bind(self, f: Callable[[T], 'Parsec[U]']) -> 'Parsec[U]':
-        def parse(state: State) -> Result[U]:
-            value, new_state, err = self(state)
-            if err and err.messages: # Check if error is not "unknown"
-                return None, new_state, err
-            if value is None and err is None: # Should not happen if err logic is right
-                return None, new_state, ParseError.new_unknown(new_state.pos)
-            if value is None: # implies err is not None and has messages
-                 return None, new_state, err
+        def parse(state: State) -> ParseResult[U]: # Changed
+            res_self = self(state) # res_self is ParseResult[T]
 
+            # If self errored with a "known" error, propagate it with its consumption status
+            if res_self.error and not res_self.error.is_unknown():
+                return ParseResult(res_self.reply, res_self.consumed)
 
-            # First parser succeeded (err is None or unknown)
-            # If err was unknown, we effectively discard it and let next_parser define errors.
-            # If err had messages (e.g. from a try_parse that failed but was caught),
-            # this logic is a bit complex. For now, assume if value is present, err is ignorable or unknown.
-            
-            next_parser: 'Parsec[U]' = f(value) # value cannot be None here if no error
-            
-            # Run the next parser
-            val_u, state_u, err_u = next_parser(new_state)
+            # If self produced no value (e.g. error was None or unknown, but value was None)
+            # This indicates an issue; treat as an empty error for safety.
+            if res_self.value is None:
+                return ParseResult.error_empty(
+                    res_self.state, # state after self's attempt
+                    res_self.error or ParseError.new_unknown(res_self.state.pos)
+                )
 
-            # Merge errors if the first parser had a "known" error that was propagated
-            # This part needs careful thought. Parsec's internal Consumed/Empty helps.
-            # For now, let's assume if 'self' succeeded, 'err' is unknown.
-            # If next_parser fails, its error (err_u) is the result.
-            # If err was significant (not unknown) and next_parser also has err_u, they should merge.
-            
-            # Simplified merge logic: if self had an error, and next_parser also errors, merge.
-            # This path is typically for when 'self' succeeded (value is not None).
-            # If 'self' produced 'value' but also 'err' (e.g. from a consumed 'try_parse' failure),
-            # and then 'f(value)' parser also fails, errors should be merged.
-            # This is a subtle point. For now, let's assume if 'self' provides a 'value', its 'err' is 'unknown'.
-            if err and not err.is_unknown() and err_u and not err_u.is_unknown():
-                 return val_u, state_u, ParseError.merge(err, err_u)
-            
-            return val_u, state_u, err_u # Or just err_u if err from self is always unknown on success
+            # Self succeeded (res_self.value is not None)
+            next_parser = f(res_self.value)
+            # Run next_parser on the state *after* self has processed
+            res_next = next_parser(res_self.state) # res_next is ParseResult[U]
+
+            # Determine overall consumption: if self OR next consumed, it's consumed.
+            consumed_overall = res_self.consumed or res_next.consumed
+
+            # If next_parser errored with a "known" error
+            if res_next.error and not res_next.error.is_unknown():
+                # Merge next_parser's error with self's error (which is likely unknown here)
+                # The state for the error reply is from res_next
+                # The consumption status is consumed_overall
+                final_err = ParseError.merge(
+                    res_self.error or ParseError.new_unknown(res_self.state.pos), # error from self (likely unknown)
+                    res_next.error
+                )
+                return ParseResult(Reply(None, res_next.state, final_err), consumed_overall)
+
+            # Both self and next_parser succeeded
+            # The value is from res_next
+            # The state is from res_next
+            # Errors are merged (both likely unknown, resulting in an unknown error for the combined success)
+            # Consumption is consumed_overall
+            final_err_on_success = ParseError.merge(
+                res_self.error or ParseError.new_unknown(res_self.state.pos),
+                res_next.error or ParseError.new_unknown(res_next.state.pos)
+            )
+            return ParseResult(Reply(res_next.value, res_next.state, final_err_on_success), consumed_overall)
         return Parsec(parse)
 
     # Alternative (<|>)
     def __or__(self, other: 'Parsec[T]') -> 'Parsec[T]':
-        def parse(state: State) -> Result[T]:
-            val1, state1, err1 = self(state)
-            if val1 is not None and (err1 is None or err1.is_unknown()): # Success
-                return val1, state1, err1 # err1 is likely unknown here
+        def parse(state: State) -> ParseResult[T]: # Changed
+            res1 = self(state) # res1 is ParseResult[T]
 
-            # self failed
-            # Only try other if no input was consumed by self
-            if state.input == state1.input and state.pos == state1.pos: # More robust pos check
-                val2, state2, err2 = other(state)
-                if err1 and not err1.is_unknown() and err2 and not err2.is_unknown():
-                    # Both failed without consuming, merge errors
-                    return val2, state2, ParseError.merge(err1, err2)
-                return val2, state2, err2 # Return other's result/error
+            # If res1 succeeded (value is present and error is unknown/None)
+            # OR if res1 failed *after consuming input*, then return res1's result.
+            if (res1.value is not None and (res1.error is None or res1.error.is_unknown())) \
+               or res1.consumed:
+                return res1
+
+            # At this point, res1 failed *without consuming input* (res1.consumed is False)
+            # So, try the 'other' parser, starting from the original 'state'.
+            res2 = other(state) # res2 is ParseResult[T]
+
+            # If res2 also failed without consuming input (i.e., it's an empty error),
+            # then merge the errors from res1 and res2.
+            if res1.error and res2.error and not res2.consumed : # Both are empty errors
+                merged_err = ParseError.merge(res1.error, res2.error)
+                # The reply state is the original state, and it's an empty failure.
+                return ParseResult.error_empty(state, merged_err)
             
-            return val1, state1, err1 # self failed and consumed input
+            # Otherwise (res2 succeeded, or res2 failed but consumed input),
+            # the result of res2 takes precedence.
+            return res2
         return Parsec(parse)
 
-    # Sequence (&)
-    # self: Parsec[T], other: Parsec[U] -> result: Parsec[Tuple[T, U]]
-    def __and__(self, other: 'Parsec[U]') -> 'Parsec[Tuple[T, U]]': # Now returns a Parsec of a Tuple
-        def combined(state: State) -> Result[Tuple[T, U]]:
-            value1, state1, err1 = self(state) # self is Parsec[T]
-            if err1:
-                return None, state1, err1
+# --- Applicative Functor style operators ---
+    # (&) Sequence, keeping both results
+    def __and__(self, other: 'Parsec[U]') -> 'Parsec[Tuple[T, U]]':
+        return self.bind(lambda val_t: other.bind(lambda val_u: _pure((val_t, val_u))))
 
-            value2, state2, err2 = other(state1) # other is Parsec[U]
-            if err2:
-                return None, state2, err2
-
-            return (value1, value2), state2, ParseError.new_unknown(state2.pos) # Result is Tuple[T, U]
-        return Parsec(combined)
-
-    # Sequence (*>)
-    # self: Parsec[T], other: Parsec[U] -> result: Parsec[U]
+    # (*>) Sequence, keeping right result
     def __gt__(self, other: 'Parsec[U]') -> 'Parsec[U]':
-        def combined(state: State) -> Result[U]:
-            _, state1, err1 = self(state) # self is Parsec[T], its value is discarded
-            if err1:
-                return None, state1, err1
+        return self.bind(lambda _: other)
 
-            value2, state2, err2 = other(state1) # other is Parsec[U]
-            if err2:
-                return None, state2, err2
-
-            return value2, state2, ParseError.new_unknown(state2.pos)
-        return Parsec(combined)
-
-    # Sequence (<*)
-    # self: Parsec[T], other: Parsec[U] -> result: Parsec[T]
+    # (<*) Sequence, keeping left result
     def __lt__(self, other: 'Parsec[U]') -> 'Parsec[T]':
-        def combined(state: State) -> Result[T]:
-            value1, state1, err1 = self(state) # self is Parsec[T]
-            if err1:
-                return None, state1, err1
-
-            _, state2, err2 = other(state1) # other is Parsec[U], its value is discarded
-            if err2:
-                return None, state2, err2
-            
-            return value1, state2, ParseError.new_unknown(state2.pos)
-        return Parsec(combined)
-
-
-    # Monadic bind also available as >>
-    def __rshift__(self, f: Callable[[T], 'Parsec[U]']) -> 'Parsec[U]': # Changed other to f for clarity
-        return self.bind(f)
+        return self.bind(lambda val_t: other.bind(lambda _: _pure(val_t)))
     
+    # Monadic bind also available as >>
+    def __rshift__(self, f: Callable[[T], 'Parsec[U]']) -> 'Parsec[U]':
+        return self.bind(f)
 
-    # Label (<?>)
     def label(self, msg: str) -> 'Parsec[T]':
-        def parse(state: State) -> Result[T]:
-            value, new_state, err = self(state)
-            # Only modify error if self failed without consuming
-            if err and state.input == new_state.input and state.pos == new_state.pos:
-                # Replace 'EXPECT' messages, or add if none. Don't clobber UNEXPECT.
-                new_messages = [m for m in err.messages if m.type != MessageType.EXPECT]
+        def parse(state: State) -> ParseResult[T]: # Changed
+            res = self(state) # res is ParseResult[T]
+
+            # Only modify error if self failed *without consuming input*.
+            if res.error and not res.consumed:
+                # Create a new error by replacing/adding EXPECT messages.
+                # Keep other message types from the original error.
+                current_messages = res.error.messages if res.error else []
+                new_messages = [m for m in current_messages if m.type != MessageType.EXPECT]
                 new_messages.append(Message(MessageType.EXPECT, msg))
-                return None, new_state, ParseError(state.pos, sorted(list(set(new_messages))))
-            return value, new_state, err
+                
+                # Error is at the original state's position, and it's an empty error.
+                return ParseResult.error_empty(state, ParseError(state.pos, sorted(list(set(new_messages)))))
+            
+            # Otherwise (success, or consumed error), return the original result.
+            return res
         return Parsec(parse)
+
+def _pure(value: T) -> Parsec[T]:
+    """Return a parser that succeeds with a value without consuming input."""
+    def parse(state: State) -> ParseResult[T]:
+        return ParseResult.ok_empty(value, state) # Default err is unknown
+    return Parsec(parse)
