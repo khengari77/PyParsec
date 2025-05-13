@@ -13,7 +13,7 @@ def choice(parsers: List[Parsec[T]]) -> Parsec[T]:
         return fail("no alternatives")
     result = parsers[0]
     for p in parsers[1:]:
-        result = result | p 
+        result = result | p
     return result
 
 # 2. count: Parses n occurrences of a parser
@@ -116,29 +116,26 @@ def end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     """
     return many1(p.bind(lambda x: sep.bind(lambda _: pure(x))))
 
+
 # 13. sepEndBy: Parses zero or more occurrences separated and optionally ended by a separator
 def sep_end_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     """
     Parses zero or more occurrences of p separated and optionally ended by sep.
     """
+    # sep_end_by1 will be defined below. This creates a mutual recursion.
     return sep_end_by1(p, sep) | pure([])
+
 
 # 14. sepEndBy1: Parses one or more occurrences separated and optionally ended by a separator
 def sep_end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     """
     Parses one or more occurrences of p separated and optionally ended by sep.
     """
-    def parse(state: State) -> Result[List[T]]:
-        value, new_state, err = p(state)
-        if err or value is None:
-            return None, state, err or ParseError(state.pos, "sepEndBy1 failed")
-        sep_value, sep_state, sep_err = sep(new_state)
-        if not sep_err and sep_value is not None:
-            rest_value, rest_state, rest_err = sep_end_by(p, sep)(sep_state)
-            if not rest_err and rest_value is not None:
-                return [value] + rest_value, rest_state, None
-        return [value], new_state, None
-    return Parsec(parse)
+    def parse_re_parser(first_val: T) -> Parsec[List[T]]:
+        rest_parser = option([], sep >> sep_end_by(p, sep))
+        return rest_parser.bind(lambda rest_list: pure([first_val] + rest_list))
+
+    return p.bind(parse_re_parser)
 
 # 15. chainl: Left-associative operator chain with a default value
 def chainl(p: Parsec[T], op: Parsec[Callable[[T, T], T]], x: T) -> Parsec[T]:
