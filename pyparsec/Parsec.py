@@ -11,12 +11,23 @@ class SourcePos:
     column: int = 1
     name: str = ""
 
+# pyparsec/Parsec.py
     def update(self, token: str) -> 'SourcePos':
-        """Update position based on a token (e.g., character)."""
+        """
+        Update position based on a token (e.g., character).
+        Handles newlines and tabs correctly.
+        """
         if token == '\n':
             return SourcePos(self.line + 1, 1, self.name)
-        return SourcePos(self.line, self.column + 1, self.name)
-
+        elif token == '\t':
+            # Advance to the next tab stop (assuming tab stops are every 8 columns)
+            # Correct logic: new_col = old_col + tab_width - (old_col - 1) % tab_width
+            tab_width = 8
+            new_column = self.column + tab_width - ((self.column - 1) % tab_width)
+            return SourcePos(self.line, new_column, self.name)
+        else:
+            # For any other character, increment the column by 1
+            return SourcePos(self.line, self.column + 1, self.name)
     def __str__(self) -> str:
         return f"{self.name} line {self.line}, column {self.column}"
 
