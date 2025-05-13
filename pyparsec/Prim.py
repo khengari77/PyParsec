@@ -1,7 +1,5 @@
-from .Parsec import Parsec, Result, State, ParseError, SourcePos
+from .Parsec import Parsec, Result, State, ParseError, SourcePos, T, U
 from typing import TypeVar, Callable, Any, Optional, Tuple, List
-
-T = TypeVar('T')
 
 def pure(value: T) -> Parsec[T]:
     """Return a parser that succeeds with a value without consuming input."""
@@ -47,18 +45,89 @@ def token(show_tok: Callable[[str], str], test_tok: Callable[[str], Optional[T]]
         return result, new_state, None
     return Parsec(parse)
 
-def many(parser: Parsec[T]) -> Parsec[List[T]]:
-    """Parse zero or more occurrences."""
-    def parse(state: State) -> Result[List[T]]:
-        results = []
-        current_state = state
+
+ItemType = TypeVar('ItemType')
+AccType = TypeVar('AccType')
+
+def _many_accum(
+    # acc_func: (parsed_item, accumulated_value_so_far) -> new_accumulated_value
+    acc_func: Callable[[ItemType], Callable[[AccType], AccType]], # Curried form: item -> (acc -> acc)
+                                                                  # Or direct: Callable[[ItemType, AccType], AccType]
+    # acc_func: Callable[[ItemType, AccType], AccType],
+    p: Parsec[ItemType],
+    # initial_acc: AccType # We'll try to derive the 'empty' case like Haskell's
+    empty_acc_value: AccType # Explicitly provide the value for zero matches
+) -> Parsec[AccType]:
+    """
+    Internal helper to apply parser `p` zero or more times, accumulating results.
+    - `acc_func(item, current_acc)` is called for each successfully parsed `item`.
+    - `p` must consume input on success to continue the loop, otherwise an error is raised
+      to prevent infinite loops.
+    - If `p` fails without consuming input, accumulation stops, and `current_acc` is returned.
+    - If `p` fails after consuming input, `_many_accum` fails.
+    - If `p` never succeeds (even on the first try without consumption), `empty_acc_value` is returned.
+    """
+    def parse_accum(state_outer: State) -> Result[AccType]:
+        
+        current_acc: AccType = empty_acc_value
+        accum_state: State = state_outer # State from which we attempt the next `p`
+
         while True:
-            value, new_state, err = parser(current_state)
-            if err or value is None:
-                return results, current_state, None
-            results.append(value)
-            current_state = new_state
-    return Parsec(parse)
+            state_before_this_p_attempt = accum_state
+            
+            # Try to parse 'p'
+            item, next_state_after_p, err = p(accum_state)
+
+            if err:
+                # 'p' failed
+                if accum_state.pos == next_state_after_p.pos: # Failed without consuming input
+                    # Stop accumulation, succeed with current_acc and the state *before* this failed 'p'
+                    return current_acc, accum_state, None
+                else: # Failed *after* consuming input
+                    # _many_accum fails, propagate error and state from 'p'
+                    return None, next_state_after_p, err
+            
+            # 'p' succeeded, 'item' is the parsed value
+            # Check if 'p' consumed input
+            if accum_state.pos == next_state_after_p.pos:
+                # 'p' succeeded but consumed no input. This causes an infinite loop.
+                return None, accum_state, ParseError(
+                    accum_state.pos,
+                    "_many_accum: Applied parser succeeded without consuming input, " +
+                    "which would lead to an infinite loop."
+                )
+
+            # 'p' succeeded and consumed input. Apply accumulator.
+            current_acc = acc_func(item, current_acc)
+            accum_state = next_state_after_p
+            # Loop again from the new state
+
+    return Parsec(parse_accum)
+
+
+def many(p: Parsec[T]) -> Parsec[List[T]]:
+    """Parse zero or more occurrences of `p`."""
+    # Accumulator function: prepends item to list (builds in reverse)
+    # (item_parsed, list_built_so_far_reversed) -> new_list_built_so_far_reversed
+    acc_reversed_list = lambda item, lst: [item] + lst
+    
+    # _many_accum will give a Parsec[List[T]] where the list is reversed
+    reversed_list_parser = _many_accum(acc_reversed_list, p, []) # Empty list is initial/empty value
+    
+    # Bind to reverse the list
+    return reversed_list_parser.bind(lambda rlist: pure(list(reversed(rlist))))
+
+def skip_many(parser: Parsec[Any]) -> Parsec[None]:
+    """Skips zero or more occurrences of `parser`."""
+    # Accumulator function: does nothing, result type is arbitrary (e.g., None)
+    # (parsed_item, current_accumulator_is_None) -> new_accumulator_is_None
+    do_nothing_acc = lambda item, acc_val: None
+    
+    # _many_accum will produce Parsec[None]
+    # Initial/empty value for accumulator is None
+    return _many_accum(do_nothing_acc, parser, None)
+    # The result of _many_accum here is already Parsec[None], so no further bind needed
+    # unlike the Haskell version that might use `[]` as a dummy accumulator value type.
 
 
 def run_parser(parser: Parsec[T], input: str, user_state: Any = None, source_name: str = "") -> Tuple[Optional[T], Optional[ParseError]]:

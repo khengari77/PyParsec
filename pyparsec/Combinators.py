@@ -1,8 +1,7 @@
 from typing import List, Optional, Callable, Any, TypeVar
-from .Parsec import Parsec, State, ParseError, SourcePos, Result
+from .Parsec import Parsec, State, ParseError, SourcePos, Result, T, U
 from .Prim import pure, fail, try_parse, token, many, look_ahead
 
-T = TypeVar('T')  # Generic type for parser results
 
 # 1. choice: Tries parsers in order until one succeeds
 def choice(parsers: List[Parsec[T]]) -> Parsec[T]:
@@ -73,13 +72,22 @@ def skip_many1(p: Parsec[Any]) -> Parsec[None]:
     """
     return p.bind(lambda _: many(p).bind(lambda _: pure(None)))
 
-# 8. many1: Parses one or more occurrences of a parser
+
 def many1(p: Parsec[T]) -> Parsec[List[T]]:
     """
     Applies parser p one or more times, returning a list of results.
     """
-    return p.bind(lambda x: many(p).bind(lambda xs: pure([x] + xs)))
+    # p must succeed once
+    # then, many(p) parses zero or more additional items
+    def combine(first_item):
+        def combine_with_rest(rest_items):
+            return pure([first_item] + rest_items)
+        return many(p).bind(combine_with_rest)
 
+    return p.bind(combine)
+
+    # Or more compactly:
+    # return p.bind(lambda x: many(p).bind(lambda xs: pure([x] + xs)))
 # 9. sepBy: Parses zero or more occurrences separated by a separator
 def sep_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     """
