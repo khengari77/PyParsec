@@ -127,18 +127,6 @@ class Parsec(Generic[T]):
     def __rshift__(self, f: Callable[[T], 'Parsec[U]']) -> 'Parsec[U]': # Changed other to f for clarity
         return self.bind(f)
     
-    def __invert__(self) -> 'Parsec[T]':
-        def inverted(state: State) -> Result[T]:
-            value, new_state, err = self(state)
-            if err:
-                return None, new_state, err
-            if value is None: # This check is still problematic if None is a valid success value
-                return None, new_state, ParseError(new_state.pos, "No value")
-            # What should it return on success? Your current code has no explicit return here for success.
-            # Assuming it's meant to be a pass-through if checks pass:
-            return value, new_state, None # Or whatever the intended logic is
-        return Parsec(inverted)
-
 
     # Label (<?>)
     def label(self, msg: str) -> 'Parsec[T]':
