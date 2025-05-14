@@ -271,7 +271,7 @@ class Parsec(Generic[T]):
 
             # If res2 also failed without consuming input (i.e., it's an empty error),
             # then merge the errors from res1 and res2.
-            if res1.error and res2.error and not res2.consumed : # Both are empty errors
+            if res2.value is None and not res2.consumed : # Both are empty errors
                 merged_err = ParseError.merge(res1.error, res2.error)
                 # The reply state is the original state, and it's an empty failure.
                 return ParseResult.error_empty(state, merged_err)
@@ -320,5 +320,5 @@ class Parsec(Generic[T]):
 def _pure(value: T) -> Parsec[T]:
     """Return a parser that succeeds with a value without consuming input."""
     def parse(state: State) -> ParseResult[T]:
-        return ParseResult.ok_empty(value, state) # Default err is unknown
+        return ParseResult.ok_empty(value, state, ParseError.new_unknown(state.pos)) # Default err is unknown
     return Parsec(parse)

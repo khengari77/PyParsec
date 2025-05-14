@@ -1,6 +1,6 @@
 poetry.lock
 __pycache__/
-main.py
+main*
 .*
 !.gitignore
 test/*

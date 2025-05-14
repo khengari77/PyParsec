@@ -84,6 +84,46 @@ def option_maybe(p: Parsec[T]) -> Parsec[Optional[T]]:
     """
     return p | pure(None)
 
+## pyparsec/Combinators.py
+#def option_maybe(p: Parsec[T]) -> Parsec[Optional[T]]:
+#    def parse_option_maybe(state: State) -> ParseResult[Optional[T]]:
+#        res_p = p(state)
+#        if res_p.value is not None: # p succeeded
+#            # Cast value to Optional[T] if necessary for type consistency,
+#            # though map(lambda x: x) effectively does this.
+#            # Or ensure Reply can handle T and ParseResult can be Optional[T]
+#            return ParseResult(
+#                Reply(cast(Optional[T], res_p.value), res_p.state, res_p.error),
+#                res_p.consumed
+#            )
+#        elif res_p.consumed: # p failed and consumed
+#            return res_p # Propagate consumed error, type will be T but value is None
+#        else: # p failed without consuming (empty error)
+#            # Succeed with None, and an UNKNOWN error for this success
+#            return ParseResult.ok_empty(
+#                None, # The default value
+#                state, # Original state, no consumption
+#                ParseError.new_unknown(state.pos) # Crucially, a new unknown error
+#            )
+#    return Parsec(parse_option_maybe)
+#
+## Similarly for option(default_val, p)
+#def option(default_val: U, p: Parsec[T]) -> Parsec[Union[T, U]]: # Or just Parsec[T] if U is subtype of T
+#    # This assumes U can be the type of default_val, and T is result of p
+#    # Result type is Union[T, U]
+#    def parse_option(state: State) -> ParseResult[Union[T, U]]:
+#        res_p = p(state)
+#        # If p succeeded, its value is T. The result is Union[T,U].
+#        if res_p.value is not None and (res_p.error is None or res_p.error.is_unknown()):
+#            return ParseResult(Reply(res_p.value, res_p.state, res_p.error), res_p.consumed)
+#        # If p failed AND consumed input, propagate the error from p.
+#        elif res_p.value is None and res_p.consumed:
+#            return res_p # error is from p, state from p
+#        # If p failed without consuming input (empty error) OR p succeeded but with a known error (should not happen for basic parsers)
+#        else: # p failed without consuming
+#            return ParseResult.ok_empty(default_val, state, ParseError.new_unknown(state.pos))
+#    return Parsec(parse_option)
+
 # 6. optional: Tries a parser, discarding the result
 def optional(p: Parsec[T]) -> Parsec[None]:
     """

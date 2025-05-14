@@ -57,7 +57,7 @@ def look_ahead(parser: Parsec[T]) -> Parsec[T]:
         res = parser(state) # res is ParseResult[T]
 
         # If parser errored, it's an empty error from the original state
-        if res.error:
+        if res.value is None:
             return ParseResult.error_empty(state, res.error)
         
         # If parser succeeded, return its value but with the original state (empty success)
@@ -84,7 +84,7 @@ def _many_accum(
 
             consumed_overall = consumed_overall or res_p.consumed
 
-            if res_p.error:
+            if res_p.value is None:
                 # 'p' failed
                 if not res_p.consumed: # Failed without consuming input (empty error from p)
                     # Stop accumulation, succeed with current_acc.
@@ -97,7 +97,7 @@ def _many_accum(
                         return ParseResult.ok_empty(current_acc, accum_state, ParseError.new_unknown(accum_state.pos))
                 else: # Failed *after* consuming input (consumed error from p)
                     # _many_accum fails, propagate error and state from 'p'. It's a consumed error.
-                    return ParseResult.error_consumed(res_p.state, res_p.error)
+                    return res_p
 
             # 'p' succeeded, res_p.value is the parsed item
             # Check if 'p' (this specific iteration) consumed input
