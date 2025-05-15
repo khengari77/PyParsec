@@ -84,46 +84,6 @@ def option_maybe(p: Parsec[T]) -> Parsec[Optional[T]]:
     """
     return p | pure(None)
 
-## pyparsec/Combinators.py
-#def option_maybe(p: Parsec[T]) -> Parsec[Optional[T]]:
-#    def parse_option_maybe(state: State) -> ParseResult[Optional[T]]:
-#        res_p = p(state)
-#        if res_p.value is not None: # p succeeded
-#            # Cast value to Optional[T] if necessary for type consistency,
-#            # though map(lambda x: x) effectively does this.
-#            # Or ensure Reply can handle T and ParseResult can be Optional[T]
-#            return ParseResult(
-#                Reply(cast(Optional[T], res_p.value), res_p.state, res_p.error),
-#                res_p.consumed
-#            )
-#        elif res_p.consumed: # p failed and consumed
-#            return res_p # Propagate consumed error, type will be T but value is None
-#        else: # p failed without consuming (empty error)
-#            # Succeed with None, and an UNKNOWN error for this success
-#            return ParseResult.ok_empty(
-#                None, # The default value
-#                state, # Original state, no consumption
-#                ParseError.new_unknown(state.pos) # Crucially, a new unknown error
-#            )
-#    return Parsec(parse_option_maybe)
-#
-## Similarly for option(default_val, p)
-#def option(default_val: U, p: Parsec[T]) -> Parsec[Union[T, U]]: # Or just Parsec[T] if U is subtype of T
-#    # This assumes U can be the type of default_val, and T is result of p
-#    # Result type is Union[T, U]
-#    def parse_option(state: State) -> ParseResult[Union[T, U]]:
-#        res_p = p(state)
-#        # If p succeeded, its value is T. The result is Union[T,U].
-#        if res_p.value is not None and (res_p.error is None or res_p.error.is_unknown()):
-#            return ParseResult(Reply(res_p.value, res_p.state, res_p.error), res_p.consumed)
-#        # If p failed AND consumed input, propagate the error from p.
-#        elif res_p.value is None and res_p.consumed:
-#            return res_p # error is from p, state from p
-#        # If p failed without consuming input (empty error) OR p succeeded but with a known error (should not happen for basic parsers)
-#        else: # p failed without consuming
-#            return ParseResult.ok_empty(default_val, state, ParseError.new_unknown(state.pos))
-#    return Parsec(parse_option)
-
 # 6. optional: Tries a parser, discarding the result
 def optional(p: Parsec[T]) -> Parsec[None]:
     """
@@ -138,22 +98,13 @@ def skip_many1(p: Parsec[Any]) -> Parsec[None]:
     """
     return p.bind(lambda _: many(p).bind(lambda _: pure(None)))
 
-
+# 8. many1: Applies a parser one or more times
 def many1(p: Parsec[T]) -> Parsec[List[T]]:
     """
     Applies parser p one or more times, returning a list of results.
     """
-    # p must succeed once
-    # then, many(p) parses zero or more additional items
-    def combine(first_item):
-        def combine_with_rest(rest_items):
-            return pure([first_item] + rest_items)
-        return many(p).bind(combine_with_rest)
+    return p.bind(lambda x: many(p).bind(lambda xs: pure([x] + xs)))
 
-    return p.bind(combine)
-
-    # Or more compactly:
-    # return p.bind(lambda x: many(p).bind(lambda xs: pure([x] + xs)))
 # 9. sepBy: Parses zero or more occurrences separated by a separator
 def sep_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     """
@@ -181,7 +132,6 @@ def end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     Parses one or more occurrences of p, each followed by sep, returning a list of p's results.
     """
     return many1(p.bind(lambda x: sep.bind(lambda _: pure(x))))
-
 
 # 13. sepEndBy: Parses zero or more occurrences separated and optionally ended by a separator
 def sep_end_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
@@ -253,15 +203,25 @@ def any_token() -> Parsec[str]:
 
 # 21. notFollowedBy: Succeeds if a parser fails without consuming input
 def not_followed_by(p: Parsec[Any]) -> Parsec[None]:
-    # Attempt p; if it succeeds, not_followed_by fails.
-    # If p fails, not_followed_by succeeds.
-    # Crucially, not_followed_by should not consume input.
-    attempt_p_then_fail = try_parse(p).bind(
-        lambda x: fail(f"unexpected {x}") # If p succeeded, this branch is taken, then fail creates an empty error
-    )
-    succeed_empty = pure(None) # If p failed (handled by try_parse), this branch is taken by <|>
+    def parse(state: State) -> ParseResult[None]:
+        # Attempt p without consuming input from not_followed_by's perspective.
+        # look_ahead(p) attempts p. If p succeeds, look_ahead makes it an empty success.
+        # If p fails (consumed or empty), look_ahead propagates that failure.
+        # try_parse then ensures that any failure from look_ahead(p) becomes an empty failure.
+        res_attempt_p = try_parse(look_ahead(p))(state)
 
-    return attempt_p_then_fail | succeed_empty
+        if res_attempt_p.error and not res_attempt_p.error.is_unknown():
+            # p effectively failed (its failure was made empty by try_parse(look_ahead(...))).
+            # So, not_followed_by SUCCEEDS.
+            return ParseResult.ok_empty(None, state, ParseError.new_unknown(state.pos))
+        else:
+            # p effectively succeeded (res_attempt_p.value is its result).
+            # So, not_followed_by FAILS.
+            # Create a generic "unexpected" message.
+            # Parsec uses `show` of p's result. A generic message is often sufficient.
+            err_text = f"unexpected {str(res_attempt_p.value)}" if res_attempt_p.value is not None else "unexpected successful parse"
+            return ParseResult.error_empty(state, ParseError.new_message(state.pos, MessageType.UNEXPECT, err_text))
+    return Parsec(parse).label(f"not followed by {p!r}") # Optional: add a label
 
 # 22. manyTill: Parses p zero or more times until end succeeds
 def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[List[T]]:

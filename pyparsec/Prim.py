@@ -50,19 +50,18 @@ def try_parse(parser: Parsec[T]) -> Parsec[T]:
         return res
     return Parsec(parse)
 
-
 def look_ahead(parser: Parsec[T]) -> Parsec[T]:
-    """Parse without consuming input."""
     def parse(state: State) -> ParseResult[T]:
         res = parser(state) # res is ParseResult[T]
 
-        # If parser errored, it's an empty error from the original state
-        if res.value is None:
-            return ParseResult.error_empty(state, res.error)
-        
-        # If parser succeeded, return its value but with the original state (empty success)
-        # The error in the reply should be unknown at the original position.
-        return ParseResult.ok_empty(res.value, state, ParseError.new_unknown(state.pos))
+        if res.error and not res.error.is_unknown():
+            # p failed with a known error. Propagate its error and consumption status.
+            # The state in res.reply is the state *after* p's attempt.
+            return res 
+        else:
+            # p succeeded (its error is unknown or None).
+            # Return p's value, but with the original state, and mark as non-consumed for look_ahead.
+            return ParseResult.ok_empty(res.value, state, ParseError.new_unknown(state.pos))
     return Parsec(parse)
 
 ItemType = TypeVar('ItemType')
