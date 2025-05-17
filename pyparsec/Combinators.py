@@ -1,5 +1,5 @@
-from typing import List, Optional, Callable, Any, TypeVar
-from .Parsec import Parsec, State, ParseError, SourcePos, ParseResult, T, U, MessageType
+from typing import List, Optional, Callable, Any, TypeVar, Union
+from .Parsec import Parsec, State, ParseError, SourcePos, ParseResult, T, U, MessageType, Reply
 from .Prim import pure, fail, try_parse, token, many, look_ahead
 
 
@@ -163,11 +163,90 @@ def chainl(p: Parsec[T], op: Parsec[Callable[[T, T], T]], x: T) -> Parsec[T]:
 # 16. chainl1: Left-associative operator chain
 def chainl1(p: Parsec[T], op: Parsec[Callable[[T, T], T]]) -> Parsec[T]:
     """
+    Iterative version of chainl1.
     Parses one or more p separated by op, applying op left-associatively.
     """
-    def rest(x: T) -> Parsec[T]:
-        return op.bind(lambda f: p.bind(lambda y: rest(f(x, y)))) | pure(x)
-    return p.bind(rest)
+    def parse(initial_state: State) -> ParseResult[T]:
+        # 1. Parse the first 'p'
+        res_first_p = p(initial_state)
+
+        if res_first_p.value is None:
+            # Failed to parse even the first 'p', so chainl1 fails
+            return res_first_p
+
+        # Successfully parsed the first 'p'
+        current_value = res_first_p.value
+        current_state = res_first_p.state
+        consumed_overall = res_first_p.consumed
+        # Accumulate errors from successful optional parts (op and p)
+        # Start with the error from the first p (likely unknown if p succeeded)
+        accumulated_error = res_first_p.error or ParseError.new_unknown(res_first_p.state.pos)
+
+
+        # 2. Loop to parse 'op' and 'p' repeatedly
+        while True:
+            # Save state before trying 'op' and 'p' in this iteration
+            state_before_op = current_state
+
+            # Try to parse 'op'
+            res_op = op(state_before_op)
+
+            if res_op.value is None:
+                # 'op' failed. This means the chain ends.
+                # The current_value is the final result.
+                # Merge the error from the failed 'op' attempt if it's an "empty" error.
+                # If 'op' failed "consumed", that error should not be part of a successful chainl1.
+                # However, 'op' failing empty is common (e.g. no more operators).
+                final_error = ParseError.merge(accumulated_error, res_op.error) if not res_op.consumed else accumulated_error
+                return ParseResult(
+                    Reply(current_value, current_state, final_error), # State is where op failed or last p succeeded
+                    consumed_overall # Overall consumption up to the last successful p
+                )
+
+            # 'op' succeeded
+            func_op = res_op.value
+            state_after_op = res_op.state
+            consumed_in_op = res_op.consumed
+            accumulated_error = ParseError.merge(accumulated_error, res_op.error or ParseError.new_unknown(res_op.state.pos))
+
+
+            # Try to parse 'p'
+            res_next_p = p(state_after_op)
+
+            if res_next_p.value is None:
+                # 'p' (after a successful 'op') failed. This is an error for chainl1.
+                # The whole chainl1 should fail here because 'op' was expecting a 'p'.
+                # The error should be from res_next_p, merged with previous significant errors.
+                # Consumption by op matters.
+                final_error = ParseError.merge(accumulated_error, res_next_p.error)
+                return ParseResult(
+                    Reply(None, res_next_p.state, final_error), # Error occurred at res_next_p.state
+                    consumed_overall or consumed_in_op or res_next_p.consumed
+                )
+
+            # 'op' and 'p' both succeeded in this iteration
+            next_operand = res_next_p.value
+            current_state = res_next_p.state # Update state for the next iteration
+            
+            # Update overall consumption
+            consumed_overall = consumed_overall or consumed_in_op or res_next_p.consumed
+            accumulated_error = ParseError.merge(accumulated_error, res_next_p.error or ParseError.new_unknown(res_next_p.state.pos))
+
+            # Apply the operator
+            try:
+                current_value = func_op(current_value, next_operand)
+            except Exception as e: # Catch runtime errors from the operator function itself
+                # This is a runtime failure, not a parse failure in the traditional sense,
+                # but we can represent it as a consumed parse error.
+                err_msg = f"Runtime error in operator: {e}"
+                op_runtime_error = ParseError.new_message(state_after_op.pos, MessageType.MESSAGE, err_msg) # Error at op's position
+                return ParseResult.error_consumed(state_after_op, op_runtime_error)
+
+            # Loop back to try another 'op' and 'p'
+
+    return Parsec(parse)
+
+
 
 # 17. chainr: Right-associative operator chain with a default value
 def chainr(p: Parsec[T], op: Parsec[Callable[[T, T], T]], x: T) -> Parsec[T]:
@@ -179,13 +258,41 @@ def chainr(p: Parsec[T], op: Parsec[Callable[[T, T], T]], x: T) -> Parsec[T]:
 # 18. chainr1: Right-associative operator chain
 def chainr1(p: Parsec[T], op: Parsec[Callable[[T, T], T]]) -> Parsec[T]:
     """
-    Parses one or more p separated by op, applying op right-associatively.
+    Parses one or more p separated by op, applying op right-associatively. (Iterative)
     """
-    def scan() -> Parsec[T]:
-        return p.bind(lambda x: rest(x))
-    def rest(x: T) -> Parsec[T]:
-        return op.bind(lambda f: scan().bind(lambda y: pure(f(x, y)))) | pure(x)
-    return scan()
+    def apply_right_associative(scan_results_val: List[Union[T, Callable[[T, T], T]]]) -> T:
+        # scan_results_val = [term1, op1, term2, op2, ..., termN]
+        if not scan_results_val:
+            raise ValueError("chainr1: _scan_op_chain returned empty list")
+
+        # If only one term, no operators
+        if len(scan_results_val) == 1:
+            return scan_results_val[0] # type: ignore
+
+        # Work from the right: last_term = termN, prev_op = op(N-1), prev_term = term(N-1)
+        # acc = op(N-1)(term(N-1), termN)
+        # acc = op(N-2)(term(N-2), acc)
+        
+        # Last element is always a term
+        acc_val = scan_results_val[-1]
+        # if not isinstance(acc_val, (int, float, str)) and not callable(acc_val): # Basic check
+        #      pass
+
+        idx = len(scan_results_val) - 2 # Index of the last operator
+        while idx > 0: # op_func is at idx, term is at idx-1
+            op_func = scan_results_val[idx]
+            if not callable(op_func):
+                 raise ValueError(f"chainr1: Expected operator function, got {op_func}")
+
+            term_val = scan_results_val[idx-1]
+            # if not isinstance(term_val, (int, float, str)) and not callable(term_val): # Basic check
+            #      pass
+            
+            acc_val = op_func(term_val, acc_val) # type: ignore
+            idx -= 2
+        return acc_val # type: ignore
+
+    return _scan_op_chain(p, op) >> (lambda scanned_list: pure(apply_right_associative(scanned_list)))
 
 # 19. eof: Succeeds only at the end of input
 def eof() -> Parsec[None]:
@@ -234,8 +341,6 @@ def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[List[T]]:
 
 # 23. lookAhead: Already implemented as look_ahead in the previous code
 # Assuming look_ahead: Parsec[T] -> Parsec[T] is available
-def look_ahead(p: Parsec[T]) -> Parsec[T]:
-    return look_ahead(p)
 
 # 24. parserTrace: Debugging parser that prints the remaining input
 def parser_trace(label_str: str) -> Parsec[None]: # Renamed label to label_str
@@ -261,3 +366,82 @@ def parser_traced(label_str: str, p: Parsec[T]) -> Parsec[T]:
     # If p succeeds, its result is passed through.
     return trace_enter >> (try_parse(p) | (parser_trace(f"{label_str} backtracked") >> Parsec(lambda s: on_backtrack(s))))
 
+
+# Helper to define the type of operator function more clearly
+OpFuncType = Callable[[T, T], T] # Example for binary ops like in chainl/r
+
+def _scan_op_chain(
+    term_parser: Parsec[T],
+    op_parser: Parsec[OpFuncType]  # Operator parser returns the function itself
+) -> Parsec[List[Union[T, OpFuncType]]]:
+    """
+    Parses `term_parser (op_parser term_parser)*` and returns a flat list
+    of alternating term results and operator functions: 
+    [term1_val, op1_func, term2_val, op2_func, ..., termN_val].
+    Handles consumption and error merging during the scan.
+    Fails if the first term_parser fails.
+    """
+    def parse(initial_state: State) -> ParseResult[List[Union[T, OpFuncType]]]:
+        # 1. Parse the first term_parser
+        res_first_term = term_parser(initial_state)
+        if res_first_term.value is None: # First term failed
+            return res_first_term # Propagate its error and consumption
+
+        # Successfully parsed the first term
+        scan_results: List[Union[T, OpFuncType]] = [res_first_term.value]
+        current_state = res_first_term.state
+        overall_consumed = res_first_term.consumed
+        # Error from the first term (likely unknown if it succeeded)
+        accumulated_error = res_first_term.error or ParseError.new_unknown(current_state.pos)
+
+        while True:
+            # 2. Try to parse op_parser
+            # We are at current_state, which is after the last successful term/op
+            op_attempt_state = current_state 
+            res_op = op_parser(op_attempt_state)
+            
+            # Merge op's error (even if it's an unknown error from a successful empty op parse)
+            accumulated_error = ParseError.merge(accumulated_error, res_op.error)
+
+            # If op_parser failed EMPTY, the chain is complete.
+            if res_op.value is None and not res_op.consumed:
+                if overall_consumed:
+                    return ParseResult.ok_consumed(scan_results, op_attempt_state, accumulated_error)
+                else: # Nothing consumed overall, should be initial_state
+                    return ParseResult.ok_empty(scan_results, initial_state, accumulated_error)
+
+            # If op_parser failed CONSUMED, the whole _scan_op_chain fails.
+            if res_op.value is None and res_op.consumed:
+                overall_consumed = True # op_parser itself consumed
+                return ParseResult.error_consumed(res_op.state, accumulated_error)
+
+            # op_parser succeeded. It might have consumed or not.
+            op_func = res_op.value
+            overall_consumed = overall_consumed or res_op.consumed
+            current_state = res_op.state # State after successful op_parser
+
+            # 3. Try to parse the next term_parser (must follow an op)
+            term_after_op_attempt_state = current_state
+            res_next_term = term_parser(term_after_op_attempt_state)
+            
+            # Merge next term's error
+            accumulated_error = ParseError.merge(accumulated_error, res_next_term.error)
+
+            # If the next term_parser fails, the chain is malformed (op without RHS).
+            if res_next_term.value is None:
+                overall_consumed = overall_consumed or res_next_term.consumed # next_term might have consumed
+                if overall_consumed:
+                    return ParseResult.error_consumed(res_next_term.state, accumulated_error)
+                else:
+                    # This means: first_term (ok, empty), op (ok, empty), next_term (fail, empty)
+                    return ParseResult.error_empty(initial_state, accumulated_error)
+            
+            # Both op_parser and subsequent term_parser succeeded.
+            scan_results.append(op_func)
+            scan_results.append(res_next_term.value)
+            
+            overall_consumed = overall_consumed or res_next_term.consumed
+            current_state = res_next_term.state
+            # Loop again to find another op
+
+    return Parsec(parse)

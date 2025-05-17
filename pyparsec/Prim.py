@@ -232,3 +232,23 @@ def tokens_prime(show_tokens_fn: Callable[[str], str],
             ])
             return ParseResult.error_empty(state, err)
     return Parsec(parse)
+
+# This function isn't part of the Haskell version
+# But it's needed to emulate lazy evaluation
+def lazy(parser_producer: Callable[[], Parsec[T]]) -> Parsec[T]:
+    """
+    Creates a parser that is evaluated lazily.
+    This is used to define recursive parsers without explicit forward declaration.
+    The `parser_producer` function should return the actual parser.
+    """
+    memoized_parser: Optional[Parsec[T]] = None
+
+    def parse(state: State) -> ParseResult[T]:
+        nonlocal memoized_parser
+        if memoized_parser is None:
+            memoized_parser = parser_producer()
+            if not isinstance(memoized_parser, Parsec):
+                raise TypeError(f"Lazy parser producer was expected to return a Parsec object, but returned {type(memoized_parser)}")
+        return memoized_parser(state) # Call the actual parser's parse_fn
+
+    return Parsec(parse)
