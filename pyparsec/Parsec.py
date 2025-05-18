@@ -5,14 +5,6 @@ from enum import Enum, auto
 T = TypeVar('T')  # Generic type for parser results
 U = TypeVar('U')
 
-# pyparsec/Parsec.py (or a new types.py)
-
-from dataclasses import dataclass
-from typing import Generic, Tuple, Optional, Any
-
-
-
-
 @dataclass
 class SourcePos:
     """Represents the current position in the input stream."""
@@ -202,6 +194,7 @@ class Parsec(Generic[T]):
     """A parser combinator that processes input and returns a result."""
     def __init__(self, parse_fn: Callable[[State], ParseResult[T]]): # Input function produces ParseResult[T]
         self.parse_fn = parse_fn
+        self.name = parse_fn.__name__
 
     def __call__(self, state: State) -> ParseResult[T]: # Parsec[T] produces ParseResult[T]
         return self.parse_fn(state)
@@ -286,21 +279,26 @@ class Parsec(Generic[T]):
         return self.bind(f)
 
     def label(self, msg: str) -> 'Parsec[T]':
-        def parse(state: State) -> ParseResult[T]: # Changed
+        def parse(state: State) -> ParseResult[T]:
             res = self(state) # res is ParseResult[T]
 
-            # Only modify error if self failed *without consuming input*.
-            if res.error and not res.consumed:
-                # Create a new error by replacing/adding EXPECT messages.
-                # Keep other message types from the original error.
-                current_messages = res.error.messages if res.error else []
-                new_messages = [m for m in current_messages if m.type != MessageType.EXPECT]
-                new_messages.append(Message(MessageType.EXPECT, msg))
-
+            # Only modify error if self failed *without consuming input* AND the error is *known*.
+            if res.error and not res.error.is_unknown() and not res.consumed:
                 # Error is at the original state's position, and it's an empty error.
-                return ParseResult.error_empty(state, ParseError(state.pos, sorted(list(set(new_messages)))))
+                # Replace existing EXPECT messages or add if none.
+                current_messages = res.error.messages
+                # Filter out old EXPECT messages, keep others
+                non_expect_messages = [m for m in current_messages if m.type != MessageType.EXPECT]
+                new_expect_message = Message(MessageType.EXPECT, msg)
+                
+                # Add the new expect message. Ensure no duplicates if msg was already a non-EXPECT type.
+                # A simpler way: just replace all EXPECTs with the new one.
+                # Parsec typically clears other expect messages and adds this one.
+                final_messages = [m for m in res.error.messages if m.type != MessageType.EXPECT] + [Message(MessageType.EXPECT, msg)]
+                
+                return ParseResult.error_empty(state, ParseError(state.pos, sorted(list(set(final_messages)))))
 
-            # Otherwise (success, or consumed error), return the original result.
+            # Otherwise (success, or consumed error, or empty unknown error), return the original result.
             return res
         return Parsec(parse)
 

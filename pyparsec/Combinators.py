@@ -191,55 +191,59 @@ def chainl1(p: Parsec[T], op: Parsec[Callable[[T, T], T]]) -> Parsec[T]:
             # Try to parse 'op'
             res_op = op(state_before_op)
 
-            if res_op.value is None:
-                # 'op' failed. This means the chain ends.
-                # The current_value is the final result.
-                # Merge the error from the failed 'op' attempt if it's an "empty" error.
-                # If 'op' failed "consumed", that error should not be part of a successful chainl1.
-                # However, 'op' failing empty is common (e.g. no more operators).
-                final_error = ParseError.merge(accumulated_error, res_op.error) if not res_op.consumed else accumulated_error
-                return ParseResult(
-                    Reply(current_value, current_state, final_error), # State is where op failed or last p succeeded
-                    consumed_overall # Overall consumption up to the last successful p
-                )
-
+            if res_op.value is None:  # 'op' failed.
+                if res_op.consumed:
+                    # Op failed AND consumed. This is an error for chainl1.
+                    # The error from `op` is significant.
+                    final_error = ParseError.merge(accumulated_error, res_op.error)
+                    return ParseResult(
+                        Reply(None, res_op.state, final_error), # Error occurred at res_op.state
+                        consumed_overall or res_op.consumed # Mark as consumed overall
+                    )
+                else:
+                    # Op failed but did NOT consume (e.g., EOF or wrong token).
+                    # This means the chain of p (op p)* has ended.
+                    # The current_value is the final result.
+                    # The error associated with this successful termination should ideally be
+                    # the `accumulated_error` from the parts that *did* succeed,
+                    # not the error from the *attempt* to find another 'op'.
+                    # The state for the reply should be state_before_op (where 'op' was attempted and failed empty)
+                    return ParseResult(
+                        Reply(current_value, state_before_op, accumulated_error), # Use state_before_op, and only accumulated_error
+                        consumed_overall
+                    )
+            
             # 'op' succeeded
             func_op = res_op.value
             state_after_op = res_op.state
             consumed_in_op = res_op.consumed
+            # Important: Merge op's error ONLY if op succeeded (even if unknown)
             accumulated_error = ParseError.merge(accumulated_error, res_op.error or ParseError.new_unknown(res_op.state.pos))
 
 
-            # Try to parse 'p'
+            # Try to parse 'p' (the operand after op)
             res_next_p = p(state_after_op)
 
-            if res_next_p.value is None:
-                # 'p' (after a successful 'op') failed. This is an error for chainl1.
-                # The whole chainl1 should fail here because 'op' was expecting a 'p'.
-                # The error should be from res_next_p, merged with previous significant errors.
-                # Consumption by op matters.
-                final_error = ParseError.merge(accumulated_error, res_next_p.error)
+            if res_next_p.value is None: # 'p' (after a successful 'op') failed.
+                # This is a definitive error for chainl1 because 'op' was expecting a 'p'.
+                final_error = ParseError.merge(accumulated_error, res_next_p.error) # Include error from this failing p
                 return ParseResult(
                     Reply(None, res_next_p.state, final_error), # Error occurred at res_next_p.state
                     consumed_overall or consumed_in_op or res_next_p.consumed
                 )
-
-            # 'op' and 'p' both succeeded in this iteration
-            next_operand = res_next_p.value
-            current_state = res_next_p.state # Update state for the next iteration
             
-            # Update overall consumption
+            # 'op' and 'p' both succeeded in this iteration
+            # ... rest of the loop (apply operator, update accumulated_error from res_next_p) ...
+            next_operand = res_next_p.value
+            current_state = res_next_p.state
             consumed_overall = consumed_overall or consumed_in_op or res_next_p.consumed
             accumulated_error = ParseError.merge(accumulated_error, res_next_p.error or ParseError.new_unknown(res_next_p.state.pos))
-
-            # Apply the operator
+            
             try:
                 current_value = func_op(current_value, next_operand)
-            except Exception as e: # Catch runtime errors from the operator function itself
-                # This is a runtime failure, not a parse failure in the traditional sense,
-                # but we can represent it as a consumed parse error.
+            except Exception as e:
                 err_msg = f"Runtime error in operator: {e}"
-                op_runtime_error = ParseError.new_message(state_after_op.pos, MessageType.MESSAGE, err_msg) # Error at op's position
+                op_runtime_error = ParseError.new_message(state_after_op.pos, MessageType.MESSAGE, err_msg)
                 return ParseResult.error_consumed(state_after_op, op_runtime_error)
 
             # Loop back to try another 'op' and 'p'
