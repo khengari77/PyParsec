@@ -1,10 +1,17 @@
-from .Parsec import Parsec, State, ParseError, SourcePos, MessageType, Message, Reply, ParseResult, T, U
-from typing import TypeVar, Callable, Any, Optional, Tuple, List
+from typing import TypeVar, Callable, Any, Optional, Tuple, List, Sequence, Union
+from .Parsec import (
+    Parsec, State, ParseError, SourcePos, ParseResult, 
+    MessageType, Message, Reply, Ok, Error, 
+    update_pos_string, update_pos_char
+)
 
-ItemType = TypeVar('ItemType')
-AccType = TypeVar('AccType')
+# --- Type Variables ---
+T = TypeVar('T')
+U = TypeVar('U')
+S = TypeVar('S')  # Input element type (e.g., char, int, Token)
+AccType = TypeVar('AccType') # Accumulator type for many
 
-def pure(value: T) -> Parsec[T]: # Moved from Parsec.py or ensure it's defined first
+def pure(value: T) -> Parsec[T]:
     """Return a parser that succeeds with a value without consuming input."""
     def parse(state: State) -> ParseResult[T]:
         return ParseResult.ok_empty(value, state, ParseError.new_unknown(state.pos))
@@ -13,234 +20,226 @@ def pure(value: T) -> Parsec[T]: # Moved from Parsec.py or ensure it's defined f
 def fail(msg: str) -> Parsec[Any]:
     """A parser that always fails with a message."""
     def parse(state: State) -> ParseResult[Any]:
-        return ParseResult.error_empty(state, ParseError.new_message(state.pos, MessageType.MESSAGE, msg))
+        return ParseResult.error_empty(
+            ParseError.new_message(state.pos, MessageType.MESSAGE, msg)
+        )
     return Parsec(parse)
 
-def token(show_tok: Callable[[str], str], test_tok: Callable[[str], Optional[T]]) -> Parsec[T]:
-    """Parse a single token matching a condition."""
+def token(
+    show_tok: Callable[[S], str], 
+    test_tok: Callable[[S], Optional[T]],
+    next_pos: Optional[Callable[[SourcePos, S], SourcePos]] = None 
+) -> Parsec[T]:
+    """
+    Parse a single token. 
+    next_pos is optional: if provided, it calculates new position from the token.
+    If not provided, it falls back to standard text logic.
+    """
     def parse(state: State) -> ParseResult[T]:
-        if not state.input:
-            # Failed to get a token (EOF), empty error
-            return ParseResult.error_empty(state, ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, ""))
+        if not state.input: # Handles empty str, bytes, or list
+            return ParseResult.error_empty(ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, ""))
 
         tok_val = state.input[0]
         result_val = test_tok(tok_val)
 
         if result_val is None:
-            # Token didn't match, empty error
-            return ParseResult.error_empty(state, ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, show_tok(tok_val)))
+            return ParseResult.error_empty(ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, show_tok(tok_val)))
 
-        # Token matched and consumed
-        new_pos = state.pos.update(tok_val) # Assuming SourcePos.update handles single char
-        new_state = State(state.input[1:], new_pos, state.user)
-        return ParseResult.ok_consumed(result_val, new_state, ParseError.new_unknown(new_pos))
+        # Calculate new position
+        if next_pos:
+            new_pos_val = next_pos(state.pos, tok_val)
+        else:
+            # Fallback for text streams
+            # We cast to str to be safe, assuming S is char-like if next_pos wasn't provided
+            new_pos_val = update_pos_char(state.pos, str(tok_val)) 
+
+        new_state = State(state.input[1:], new_pos_val, state.user)
+        return ParseResult.ok_consumed(result_val, new_state, ParseError.new_unknown(new_pos_val))
     return Parsec(parse)
 
 def try_parse(parser: Parsec[T]) -> Parsec[T]:
-    """Try a parser, converting a consumed error into an empty error."""
+    """Try a parser, converting a consumed error into an empty error (backtracking)."""
     def parse(state: State) -> ParseResult[T]:
-        res = parser(state) # res is ParseResult[T]
-        if res.error and res.consumed:
-            # If parser failed AND consumed input, create an empty error using original state
-            return ParseResult.error_empty(state, res.error)
+        res = parser(state) 
         
-        # Otherwise (success OR empty error), return the result as is.
-        # If it was success (consumed or empty), consumption status is preserved.
-        # If it was an empty error, it's already an empty error.
+        # If parser failed AND consumed input
+        if isinstance(res.reply, Error) and res.consumed:
+            # Return Error with consumed=False
+            return ParseResult(res.reply, False)
+        
         return res
     return Parsec(parse)
 
 def look_ahead(parser: Parsec[T]) -> Parsec[T]:
+    """Parses p, returns its result, but rolls back state. Consumes nothing."""
     def parse(state: State) -> ParseResult[T]:
-        res = parser(state) # res is ParseResult[T]
+        res = parser(state)
 
-        if res.error and not res.error.is_unknown():
-            # p failed with a known error. Propagate its error and consumption status.
-            # The state in res.reply is the state *after* p's attempt.
-            return res 
+        if isinstance(res.reply, Ok):
+            # Success: Return value, but ORIGINAL state. Consumed = False.
+            return ParseResult.ok_empty(res.reply.value, state, ParseError.new_unknown(state.pos))
         else:
-            # p succeeded (its error is unknown or None).
-            # Return p's value, but with the original state, and mark as non-consumed for look_ahead.
-            return ParseResult.ok_empty(res.value, state, ParseError.new_unknown(state.pos))
+            # Error: Propagate error exactly as is (if it consumed, we consumed).
+            return res
     return Parsec(parse)
 
-ItemType = TypeVar('ItemType')
-AccType = TypeVar('AccType')
-
 def _many_accum(
-    acc_func: Callable[[ItemType, AccType], AccType],
-    p: Parsec[ItemType],
+    acc_func: Callable[[T, AccType], AccType],
+    p: Parsec[T],
     empty_acc_value: AccType
 ) -> Parsec[AccType]:
+    """Iterative implementation of 'many' to avoid recursion depth issues."""
     def parse_accum(state_outer: State) -> ParseResult[AccType]:
         current_acc: AccType = empty_acc_value
-        accum_state: State = state_outer # Current state for the next attempt of p
-        consumed_overall: bool = False # Track if any p has consumed input
+        accum_state: State = state_outer 
+        consumed_overall: bool = False
+        
+        # We need to track the "ghost" error from the last failed attempt
+        last_err: ParseError = ParseError.new_unknown(state_outer.pos)
 
         while True:
-            # Try to parse 'p'
-            res_p = p(accum_state) # res_p is ParseResult[ItemType]
+            res_p = p(accum_state)
 
-            consumed_overall = consumed_overall or res_p.consumed
-
-            if res_p.value is None:
-                # 'p' failed
-                if not res_p.consumed: # Failed without consuming input (empty error from p)
-                    # Stop accumulation, succeed with current_acc.
-                    # The state is accum_state (before this failed 'p').
-                    # Report as empty success if nothing was ever consumed.
-                    # Report as consumed success if *any* previous iteration of p consumed.
+            if isinstance(res_p.reply, Error):
+                # p failed.
+                if res_p.consumed:
+                    # Consumed Error: Fatal. Propagate immediately.
+                    return ParseResult(res_p.reply, True)
+                else:
+                    # Empty Error: End of loop.
+                    final_err = ParseError.merge(last_err, res_p.reply.error)
+                    
                     if consumed_overall:
-                        return ParseResult.ok_consumed(current_acc, accum_state, ParseError.new_unknown(accum_state.pos))
+                        return ParseResult.ok_consumed(current_acc, accum_state, final_err)
                     else:
-                        return ParseResult.ok_empty(current_acc, accum_state, ParseError.new_unknown(accum_state.pos))
-                else: # Failed *after* consuming input (consumed error from p)
-                    # _many_accum fails, propagate error and state from 'p'. It's a consumed error.
-                    return res_p
+                        return ParseResult.ok_empty(current_acc, accum_state, final_err)
 
-            # 'p' succeeded, res_p.value is the parsed item
-            # Check if 'p' (this specific iteration) consumed input
+            # p succeeded (Ok)
+            ok_reply: Ok[T] = res_p.reply # type: ignore
+            
+            # Infinite loop check: Succeeded without consuming
             if not res_p.consumed:
-                # 'p' succeeded but consumed no input in this iteration. This causes an infinite loop.
-                # Report as a consumed error because _many_accum itself is trying to make progress.
-                return ParseResult.error_consumed(
-                    accum_state, # Error at the point of non-consumption
+                 return ParseResult.error_consumed(
                     ParseError.new_message(
                         accum_state.pos,
                         MessageType.MESSAGE,
-                        "_many_accum: Applied parser succeeded without consuming input."
+                        "many: combinator applied to a parser that accepts an empty string."
                     )
-                )
+                 )
 
-            # 'p' succeeded and consumed input for this iteration. Apply accumulator.
-            current_acc = acc_func(res_p.value, current_acc) # type: ignore
-            accum_state = res_p.state # Update state for the next loop
-            # Loop again
+            # Update accumulation
+            consumed_overall = True
+            current_acc = acc_func(ok_reply.value, current_acc)
+            accum_state = ok_reply.state
+            last_err = ok_reply.error # Track potential ghost errors from the success
+            
     return Parsec(parse_accum)
 
 def many(p: Parsec[T]) -> Parsec[List[T]]:
     """Parse zero or more occurrences of `p`."""
-    # Accumulator function: appends item to list (builds in forward order)
-    # (item_parsed, list_built_so_far) -> new_list_built_so_far
-    acc_list_append = lambda item, lst: lst + [item]
+    return _many_accum(lambda item, lst: lst + [item], p, [])
 
-    # _many_accum will give a Parsec[List[T]] where the list is already in the correct order.
-    # The initial value for the accumulator is an empty list.
-    return _many_accum(acc_list_append, p, [])
+def many1(p: Parsec[T]) -> Parsec[List[T]]:
+    """Parse one or more occurrences of `p`."""
+    # 1. p.bind(...) ensures the first p succeeds.
+    # 2. _many_accum(..., [x]) continues parsing zero or more p's, 
+    #    appending them to the list starting with x.
+    return p.bind(lambda x: _many_accum(lambda item, lst: lst + [item], p, [x]))
 
+def skip_many(p: Parsec[Any]) -> Parsec[None]:
+    """Skips zero or more occurrences of `p`."""
+    return _many_accum(lambda _, __: None, p, None)
 
-def skip_many(parser: Parsec[Any]) -> Parsec[None]:
-    """Skips zero or more occurrences of `parser`."""
-    # Accumulator function: does nothing, result type is arbitrary (e.g., None)
-    # (parsed_item, current_accumulator_is_None) -> new_accumulator_is_None
-    do_nothing_acc = lambda item, acc_val: None
+def run_parser(
+    parser: Parsec[T], 
+    input_data: Union[str, Sequence], 
+    user_state: Any = None, 
+    source_name: str = ""
+) -> Tuple[Optional[T], Optional[ParseError]]:
+    """Helper to run a parser and extract value/error."""
+    initial_state = State(input_data, SourcePos(1, 1, source_name), user_state)
+    res = parser(initial_state)
+    
+    if isinstance(res.reply, Ok):
+        return res.reply.value, None
+    else:
+        return None, res.reply.error
 
-    # _many_accum will produce Parsec[None]
-    # Initial/empty value for accumulator is None
-    return _many_accum(do_nothing_acc, parser, None)
-    # The result of _many_accum here is already Parsec[None], so no further bind needed
-    # unlike the Haskell version that might use `[]` as a dummy accumulator value type.
-
-
-def run_parser(parser: Parsec[T], 
-               input_str: str, 
-               user_state: Any = None, 
-               source_name: str = "") -> Tuple[Optional[T], Optional[ParseError]]:
-    initial_state = State(input_str, SourcePos(name=source_name), user_state)
-    parse_result = parser(initial_state)
-    return parse_result.value, parse_result.error
-
-def parse_test(parser: Parsec[T], input: str) -> None:
-    """Test a parser and print the result."""
-    value, err = run_parser(parser, input)
+def parse_test(parser: Parsec[T], input_data: Union[str, Sequence]) -> None:
+    val, err = run_parser(parser, input_data)
     if err:
         print(err)
     else:
-        print(value)
+        print(val)
 
-# tokens and tokens_prime need to correctly determine consumption
-def tokens(show_tokens_fn: Callable[[str], str], # Renamed for clarity
-           next_pos_fn: Callable[[SourcePos, str], SourcePos], # Renamed
-           s_list: List[str] # Renamed
-           ) -> Parsec[str]:
-    def parse(state: State) -> ParseResult[str]:
-        input_str = state.input
-        to_match_str = ''.join(s_list)
+def tokens(
+    show_tokens_fn: Callable[[Sequence[S]], str],
+    next_pos_fn: Callable[[SourcePos, Sequence[S]], SourcePos], 
+    to_match: Sequence[S]
+) -> Parsec[Sequence[S]]:
+    """
+    Polymorphic tokens parser.
+    Optimized for strings/bytes, works for generic lists.
+    """
+    def parse(state: State) -> ParseResult[Sequence[S]]:
+        input_stream = state.input
+        
+        # 1. Text Optimization (str or bytes)
+        if isinstance(input_stream, (str, bytes)):
+            target = to_match
+            # Ensure type compatibility
+            if isinstance(to_match, list):
+                if isinstance(input_stream, str): target = "".join(to_match)
+                elif isinstance(input_stream, bytes): target = bytes(to_match)
 
-        if not to_match_str: # Parsing an empty string always succeeds, consumes nothing
-            return ParseResult.ok_empty("", state, ParseError.new_unknown(state.pos))
-
-        if input_str.startswith(to_match_str):
-            matched_str = to_match_str
-            
-            # Calculate new position by iterating through matched_str
-            current_pos = state.pos
-            for char_in_matched in matched_str:
-                current_pos = current_pos.update(char_in_matched)
-            new_pos_val = current_pos # Use the iterated position
-
-            new_state_val = State(input_str[len(matched_str):], new_pos_val, state.user)
-            # tokens always consumes if it matches a non-empty string
-            return ParseResult.ok_consumed(matched_str, new_state_val, ParseError.new_unknown(new_pos_val))
+            if input_stream.startswith(target):
+                matched = target
+                # Use optimized update_string if it's text
+                if isinstance(input_stream, str):
+                    new_pos = update_pos_string(state.pos, matched)
+                else:
+                    # Bytes fallback or user provided logic
+                    new_pos = next_pos_fn(state.pos, matched)
+                    
+                new_state = State(input_stream[len(matched):], new_pos, state.user)
+                return ParseResult.ok_consumed(matched, new_state, ParseError.new_unknown(new_pos))
+        
+        # 2. Generic Sequence (List comparison)
         else:
-            # Failed to match, this is an empty error
-            expected_msg = show_tokens_fn(to_match_str)
-            # Determine what was actually found for the SysUnexpect message
-            len_to_match = len(to_match_str)
-            actual_found = input_str[:len_to_match] if len(input_str) >= len_to_match else input_str
-            if not actual_found and not input_str : # EOF
-                actual_msg_text = ""
-            else:
-                actual_msg_text = show_tokens_fn(actual_found) if actual_found else ""
+            len_target = len(to_match)
+            if len(input_stream) >= len_target:
+                potential_match = input_stream[:len_target]
+                if potential_match == to_match:
+                    new_pos = next_pos_fn(state.pos, potential_match)
+                    new_state = State(input_stream[len_target:], new_pos, state.user)
+                    return ParseResult.ok_consumed(potential_match, new_state, ParseError.new_unknown(new_pos))
 
+        # 3. Failure
+        expected_msg = show_tokens_fn(to_match)
+        len_to_match = len(to_match)
+        actual_found = input_stream[:len_to_match]
+        actual_msg_text = show_tokens_fn(actual_found) if len(actual_found) > 0 else ""
+        
+        err = ParseError(state.pos, [
+            Message(MessageType.EXPECT, expected_msg),
+            Message(MessageType.SYS_UNEXPECT, actual_msg_text)
+        ])
+        return ParseResult.error_empty(err)
 
-            err = ParseError(state.pos, [
-                Message(MessageType.EXPECT, expected_msg),
-                Message(MessageType.SYS_UNEXPECT, actual_msg_text)
-            ])
-            return ParseResult.error_empty(state, err)
     return Parsec(parse)
 
-def tokens_prime(show_tokens_fn: Callable[[str], str],
-                 _next_pos_fn: Callable[[SourcePos, str], SourcePos], # next_pos not strictly needed
-                 s_list: List[str]
-                 ) -> Parsec[str]:
-    def parse(state: State) -> ParseResult[str]:
-        input_str = state.input
-        to_match_str = ''.join(s_list)
+def tokens_prime(
+    show_tokens_fn: Callable[[Sequence[S]], str],
+    _next_pos_fn: Callable, # Unused for prime (no consumption)
+    to_match: Sequence[S]
+) -> Parsec[Sequence[S]]:
+    """Matches tokens like 'string', but consumes nothing on success (lookahead)."""
+    # This is effectively look_ahead(tokens(...)) but optimized to not calc new pos
+    p = tokens(show_tokens_fn, _next_pos_fn, to_match)
+    return look_ahead(p)
 
-        if not to_match_str: # Matching empty string, empty success
-            return ParseResult.ok_empty("", state, ParseError.new_unknown(state.pos))
-
-        if input_str.startswith(to_match_str):
-            # Matched, but tokens_prime is non-consuming success
-            return ParseResult.ok_empty(to_match_str, state, ParseError.new_unknown(state.pos))
-        else:
-            # Failed to match, empty error
-            expected_msg = show_tokens_fn(to_match_str)
-            len_to_match = len(to_match_str)
-            actual_found = input_str[:len_to_match] if len(input_str) >= len_to_match else input_str
-            if not actual_found and not input_str : # EOF
-                actual_msg_text = ""
-            else:
-                actual_msg_text = show_tokens_fn(actual_found) if actual_found else ""
-
-
-            err = ParseError(state.pos, [
-                Message(MessageType.EXPECT, expected_msg),
-                Message(MessageType.SYS_UNEXPECT, actual_msg_text)
-            ])
-            return ParseResult.error_empty(state, err)
-    return Parsec(parse)
-
-# This function isn't part of the Haskell version
-# But it's needed to emulate lazy evaluation
 def lazy(parser_producer: Callable[[], Parsec[T]]) -> Parsec[T]:
-    """
-    Creates a parser that is evaluated lazily.
-    This is used to define recursive parsers without explicit forward declaration.
-    The `parser_producer` function should return the actual parser.
-    """
+    """Lazy evaluation for recursive parsers."""
     memoized_parser: Optional[Parsec[T]] = None
 
     def parse(state: State) -> ParseResult[T]:
@@ -248,7 +247,7 @@ def lazy(parser_producer: Callable[[], Parsec[T]]) -> Parsec[T]:
         if memoized_parser is None:
             memoized_parser = parser_producer()
             if not isinstance(memoized_parser, Parsec):
-                raise TypeError(f"Lazy parser producer was expected to return a Parsec object, but returned {type(memoized_parser)}")
-        return memoized_parser(state) # Call the actual parser's parse_fn
+                raise TypeError(f"Lazy parser producer returned {type(memoized_parser)}, expected Parsec")
+        return memoized_parser(state)
 
     return Parsec(parse)

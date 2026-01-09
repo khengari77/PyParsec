@@ -1,0 +1,10 @@
+{
+    "name": "PyParsec",
+    "version": 1.0,
+    "features": ["parsing", "combinators", null],
+    "is_awesome": true,
+    "nested": {
+        "x": 10,
+        "y": 20
+    }
+}

@@ -1,5 +1,5 @@
 from typing import Callable, List, Optional
-from .Parsec import Parsec, State, ParseError, SourcePos, ParseResult, MessageType 
+from .Parsec import Parsec, State, ParseError, SourcePos, ParseResult, MessageType, update_pos_string
 from .Prim import token, tokens, tokens_prime, pure, many, fail, try_parse, skip_many  # Assumed from prior implementation
 
 # Helper function: Parses a single character
@@ -51,8 +51,8 @@ def crlf() -> Parsec[str]:
 
 # 7. endOfLine: Parses either a newline or a crlf
 def end_of_line() -> Parsec[str]:
-    """Parses a CRLF or LF end-of-line and returns '\\n'."""
-    return newline() | crlf().label("new-line")
+    return (newline() | crlf()).label("new-line")
+
 
 # 8. tab: Parses a tab character
 def tab() -> Parsec[str]:
@@ -104,12 +104,13 @@ def string(s: str) -> Parsec[str]:
     """Parses the exact string s and returns it."""
     def show_tokens(tokens: str) -> str:
         return f"'{tokens}'"
-    return tokens(show_tokens, lambda pos, text: pos.update(text), list(s)).label(f"'{s}'")
+    # Use the standalone function update_pos_string instead of pos.update
+    return tokens(show_tokens, lambda pos, text: update_pos_string(pos, text), list(s)).label(f"'{s}'")
 
 # 18. string': Parses a string without consuming input on success
 def string_prime(s: str) -> Parsec[str]:
     """Parses the string s without consuming input if successful."""
     def show_tokens(tokens: str) -> str:
         return f"'{tokens}'"
-    return tokens_prime(show_tokens, lambda pos, text: pos.update(text), list(s)).label(f"'{s}'")
+    return tokens_prime(show_tokens, lambda pos, text: update_pos_string(text), list(s)).label(f"'{s}'")
 

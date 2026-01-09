@@ -1,127 +1,150 @@
-# PyParsec: A Python Parser Combinator Library
+# PyParsec
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-passing-green)]()
 
-PyParsec is a Python library implementing parser combinators, inspired by Haskell's Parsec library. It provides a functional approach to building complex parsers by combining smaller, simpler parsers. This library aims to be flexible, composable, and easy to use for parsing various text-based formats.
+**PyParsec** is an industrial-strength Parser Combinator library for Python. 
+
+It is a faithful port of Haskell's legendary **Parsec** library, adapted for Python's idioms while maintaining mathematical correctness. Unlike many Python parser libraries, PyParsec is **stack-safe**, **type-safe**, and supports **generic inputs** (strings, bytes, or token lists).
 
 ## Key Features
 
-*   **Composable Parsers:** Build complex parsers by combining simpler ones using operators like bind (`>>=` or `>>`) and alternative (`|`).
-*   **Monadic Interface:** Leverages functional programming concepts for expressive parser construction.
-*   **Informative Error Reporting:** Provides error messages with source position (line, column).
-*   **Primitive Parsers:** Includes basic building blocks for parsing characters, strings, and satisfying conditions.
-*   **Rich Set of Combinators:** Offers combinators for sequencing, choice, repetition (zero or more, one or more), separation, optional parsing, lookahead, and more.
-*   **String Input:** Primarily designed for parsing string inputs.
+*   **🛡️ Robust Error Handling:** Distinguishes between "Empty" and "Consumed" failures, allowing precise control over backtracking using `try_parse`.
+*   **🚀 Stack-Safe Combinators:** `many`, `choice`, and expression chains are implemented iteratively. You won't hit `RecursionError` on large inputs.
+*   **🧩 Generic Input:** Parse `str`, `bytes`, or `List[T]` (e.g., tokens from a lexer). The `SourcePos` logic is decoupled from the input type.
+*   **🔋 Batteries Included:** Includes the full suite of Parsec modules:
+    *   **`Token`**: Automatically generate lexers (whitespace, comments, identifiers) from a language definition.
+    *   **`Expr`**: Built-in operator precedence parsing (Infix, Prefix, Postfix).
+*   **🐍 Pythonic Operators:** 
+    *   `>>` is polymorphic: behaves like Bind (`>>=`) when passed a function, and Sequence (`*>`) when passed a parser.
+    *   `|` is Choice (`<|>`).
 
 ## Installation
 
-You can install PyParsec directly from git using pip (I hope it'll be soon available on PyPI):
+This project is managed with `uv` and `hatchling`. You can install it directly from the repository:
 
 ```bash
 pip install git+https://github.com/khengari77/PyParsec.git
 ```
 
-To run the examples provided in the `examples/` directory, you might need additional dependencies.
-
-## Basic Usage: Parsing an Integer
-
-Here's a simple example demonstrating how to parse a sequence of digits into an integer:
-
-```python
-from pyparsec.Char import digit
-from pyparsec.Combinators import many1
-from pyparsec.Prim import run_parser, pure
-
-# Define a parser for one or more digits
-# many1(digit()) parses one or more digit characters into a list (e.g., ['1', '2', '3'])
-# >> (lambda ds: ...) sequences the parser with a function (think of bind)
-# pure(int("".join(ds))) converts the list of digits to a string, then to an int,
-#                       and lifts the result back into a successful parser.
-integer_parser = many1(digit()) >> (lambda digits: pure(int("".join(digits))))
-
-# Input string to parse
-input_string = "12345abc"
-
-# Run the parser
-result, error = run_parser(integer_parser, input_string)
-
-# Check the result
-if error:
-    print(f"Parsing failed: {error}")
-else:
-    print(f"Parsed integer: {result}")
-    # Output: Parsed integer: 12345
+For development:
+```bash
+git clone https://github.com/khengari77/PyParsec.git
+cd PyParsec
+uv sync
 ```
 
-## More Examples
+## Quick Start
 
-For more complex parsing scenarios, such as building a solver for simple arithmetic expressions, please refer to the examples provided in the `examples/` directory. The `SimpleArithmeticSolver.py` demonstrates the use of various combinators, operator precedence parsing, and handling nested expressions.
+### 1. Basic Parsing
+Parsing a sequence of digits into an integer.
 
-## Overview of Modules and Parsers
+```python
+from pyparsec import many1, digit, run_parser, pure
 
-The library is organized into several modules:
+# Logic: Parse one or more digits -> join them -> convert to int
+integer = many1(digit()) >> (lambda ds: pure(int("".join(ds))))
 
-*   **`pyparsec.Parsec`:**
-    *   Defines the core `Parsec` class, `State`, `SourcePos`, and `ParseError`.
-    *   Implements fundamental operations like bind (`bind`, `>>`), alternative (`__or__`, `|`), sequencing (`__and__`, `&`, `__lt__`, `<`, `__gt__`, `>`), and labeling (`label`).
-*   **`pyparsec.Prim`:**
-    *   Provides primitive parser constructors and runners.
-    *   `pure`: Creates a parser that always succeeds with a given value without consuming input.
-    *   `fail`: Creates a parser that always fails with a message.
-    *   `try_parse`: Attempts a parse, backtracking (resetting state) on failure.
-    *   `look_ahead`: Peeks at the input without consuming it.
-    *   `token`, `tokens`, `tokens_prime`: Low-level token and sequence parsers.
-    *   `many`: Parses zero or more occurrences of a parser.
-    *   `run_parser`: Executes a parser on an input string.
-    *   `parse_test`: Helper to run a parser and print the result or error.
-*   **`pyparsec.Char`:**
-    *   Contains parsers specifically for characters and strings.
-    *   `char`: Parses a specific character.
-    *   `satisfy`: Parses a character matching a predicate.
-    *   `one_of`, `none_of`: Parses characters from/not from a given set.
-    *   `space`, `spaces`, `newline`, `crlf`, `end_of_line`, `tab`: Whitespace and newline parsers.
-    *   `upper`, `lower`, `alpha_num`, `letter`, `digit`, `hex_digit`, `oct_digit`: Character category parsers.
-    *   `any_char`: Parses any single character.
-    *   `string`, `string_prime`: Parses a specific string (consuming or non-consuming).
-*   **`pyparsec.Combinators`:**
-    *   Offers higher-level combinators to build complex parsers.
-    *   `choice`: Tries a list of parsers in order.
-    *   `count`: Parses a fixed number of occurrences.
-    *   `between`: Parses content enclosed by delimiters.
-    *   `option`, `option_maybe`, `optional`: Handles optional parts of the input.
-    *   `many1`, `skip_many1`: Parses one or more occurrences.
-    *   `sep_by`, `sep_by1`, `end_by`, `end_by1`, `sep_end_by`, `sep_end_by1`: Parses sequences with separators.
-    *   `chainl`, `chainl1`, `chainr`, `chainr1`: Handles left/right-associative operators (e.g., for expression parsing).
-    *   `eof`: Succeeds only at the end of the input.
-    *   `any_token`: Parses any single token (character in this context).
-    *   `not_followed_by`: Succeeds if a parser fails (negative lookahead).
-    *   `many_till`: Parses occurrences until a terminator parser succeeds.
-    *   `look_ahead`: (Re-exported from `Prim`) Peeks at the input.
-    *   `parser_trace`, `parser_traced`: Utilities for debugging parsers.
+result, err = run_parser(integer, "12345")
+print(result) # 12345
+```
 
-## Roadmap and Future Plans
+### 2. Using the `Token` Module (Easy Lexing)
+Don't write manual regexes. Use `TokenParser` to handle whitespace, comments, and data types automatically.
 
-PyParsec is under active development. Future enhancements may include:
+```python
+from pyparsec import TokenParser, python_style, run_parser
 
-*   **More Combinators:** Implementing additional standard Parsec combinators.
-*   **Enhanced Error Reporting:** Providing more detailed and user-friendly error messages (e.g., expected vs. actual).
-*   **Broader Input Types:** Exploring support for input types beyond strings (e.g., lists of tokens, byte streams).
-*   **Performance Optimization:** Investigating potential performance improvements.
-*   **Comprehensive Documentation:** Expanding API documentation and tutorials.
-*   **More Examples:** Adding examples for common parsing tasks (e.g., JSON, CSV, simple languages).
-*   **Robust Testing:** Increasing test coverage, potentially using property-based testing.
+# Create a lexer based on Python syntax rules (handling # comments, etc.)
+lexer = TokenParser(python_style)
+
+# These parsers automatically skip trailing whitespace/comments!
+integer = lexer.integer
+parens  = lexer.parens
+identifier = lexer.identifier
+
+# Parse: ( count )
+parser = parens(identifier)
+
+print(run_parser(parser, "(  my_variable  ) # comments are ignored"))
+# Output: ('my_variable', None)
+```
+
+### 3. Operator Precedence (`Expr` Module)
+Parsing mathematical expressions with correct order of operations (PEMDAS) is often difficult. PyParsec makes it declarative.
+
+```python
+from pyparsec import build_expression_parser, Operator, Infix, Assoc, run_parser
+from pyparsec import TokenParser, empty_def
+
+# Setup a simple lexer
+lexer = TokenParser(empty_def)
+integer = lexer.integer
+
+# Define functions
+def add(x, y): return x + y
+def mul(x, y): return x * y
+
+# Define Operator Table
+# Higher precedence comes first!
+table = [
+    [Infix(lexer.reserved_op("*") >> (lambda _: mul), Assoc.LEFT)],
+    [Infix(lexer.reserved_op("+") >> (lambda _: add), Assoc.LEFT)]
+]
+
+expr = build_expression_parser(table, integer)
+
+print(run_parser(expr, "2 + 3 * 4")) 
+# Output: 14 (not 20!)
+```
+
+## Advanced: Generic Input (Parsing Tokens)
+
+PyParsec isn't limited to strings. You can parse a list of objects produced by a separate lexing stage.
+
+```python
+from dataclasses import dataclass
+from pyparsec import token, run_parser, SourcePos
+
+@dataclass
+class Tok:
+    kind: str
+    value: str
+
+# Define a primitive that consumes a Token object
+def match_kind(kind):
+    return token(
+        show_tok=lambda t: f"Token({kind})",
+        test_tok=lambda t: t.value if t.kind == kind else None,
+        # Update position based on token logic (optional)
+        next_pos=lambda pos, t: SourcePos(pos.line, pos.column + 1, pos.name)
+    )
+
+stream = [Tok("ID", "x"), Tok("EQ", "="), Tok("NUM", "10")]
+
+# Grammar: ID = NUM
+parser = match_kind("ID") >> match_kind("EQ") >> match_kind("NUM")
+
+print(run_parser(parser, stream))
+# Output: '10'
+```
+
+## Module Overview
+
+*   **`pyparsec.Prim`**: Core primitives (`pure`, `bind`, `fail`, `try_parse`, `many`).
+*   **`pyparsec.Char`**: String-specific parsers (`char`, `string`, `alpha_num`, `one_of`).
+*   **`pyparsec.Combinators`**: Logic flow (`choice`, `optional`, `sep_by`, `between`).
+*   **`pyparsec.Token`**: Automated lexer generation (`TokenParser`, `LanguageDef`).
+*   **`pyparsec.Expr`**: Operator precedence builder (`build_expression_parser`).
+*   **`pyparsec.Language`**: Pre-defined language styles (`java_style`, `python_style`, `haskell_style`).
 
 ## Contributing
 
-Contributions are welcome! If you'd like to contribute to PyParsec, please follow these steps:
-
-1.  Fork the repository on GitHub.
-2.  Create a new branch for your feature or bug fix.
-3.  Make your changes and add corresponding tests.
-4.  Ensure tests pass.
-5.  Submit a pull request with a clear description of your changes.
+1.  Clone the repo.
+2.  Install `uv`.
+3.  Run tests: `uv run pytest tests/` (We use Hypothesis for property-based testing).
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT License.

@@ -1,28 +1,37 @@
-[tool.poetry]
-name = "pyparsec"  # Lowercase name
+[project]
+name = "pyparsec"
 version = "0.1.0"
 description = "A Python parser combinator library inspired by Haskell's Parsec."
-authors = ["khengari77 <khengari77@gmail.com>"]
-license = "MIT"
 readme = "README.md"
-repository = "https://github.com/khengari77/PyParsec"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "khengari77", email = "khengari77@gmail.com" }
+]
 keywords = ["parser", "combinators", "parsing"]
+urls = { Repository = "https://github.com/khengari77/PyParsec" }
 
-[tool.poetry.dependencies]
-python = "^3.8"  # Wider compatibility
+dependencies = []
 
-[tool.poetry.group.test.dependencies]
-pytest = "^8.3.5"  # Core dev dependency
-
-[tool.poetry.group.examples.dependencies]  # Optional group for examples
-pipe = { git = "https://github.com/khengari77/Pipe.git", branch = "main" }
-
-[tool.poetry.extras]
-examples = ["pipe"]  # Map the 'examples' extra to the 'pipe' dependency
+[project.optional-dependencies]
+examples = [
+    "pipe @ git+https://github.com/khengari77/Pipe.git@main"
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[[tool.poetry.packages]]
-include = "pyparsec"  # Explicitly include the renamed directory
+[tool.hatch.build.targets.wheel]
+packages = ["pyparsec"]
+
+# This section is required to allow git dependencies
+[tool.hatch.metadata]
+allow-direct-references = true
+
+# UV specific configuration for development dependencies
+[dependency-groups]
+dev = [
+    "hypothesis>=6.113.0",
+    "pytest>=8.3.5",
+]
