@@ -145,6 +145,27 @@ print(run_parser(parser, stream))
 2.  Install `uv`.
 3.  Run tests: `uv run pytest tests/` (We use Hypothesis for property-based testing).
 
+## Star History
+
+<picture>
+  <source
+    media="(prefers-color-scheme: dark)"
+    srcset="
+      https://api.star-history.com/svg?repos=khengari77/PyParsec&type=Date&theme=dark
+    "
+  />
+  <source
+    media="(prefers-color-scheme: light)"
+    srcset="
+      https://api.star-history.com/svg?repos=khengari77/PyParsec&type=Date
+    "
+  />
+  <img
+    alt="Star History Chart"
+    src="https://api.star-history.com/svg?repos=khengari77/PyParsec&type=Date"
+  />
+</picture>
+
 ## License
 
 MIT License.
