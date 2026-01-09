@@ -1,3 +1,4 @@
 [submodule "examples/LetWhere"]
 	path = examples/LetWhere
 	url = https://github.com/khengari77/LetWhere.git
+	branch = master
