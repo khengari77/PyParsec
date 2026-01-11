@@ -1,0 +1,27 @@
+======================================================================
+PyParsec many() / many1() Performance Benchmark
+======================================================================
+
+Demonstrating O(n²) complexity due to list concatenation:
+Code: lambda item, lst: lst + [item]  # Creates new list each time
+
+   Input (n) |    Time (ms) | Time per item (µs) |   Growth Factor
+----------------------------------------------------------------------
+       1,000 |         5.29 |               5.29 |        baseline
+       2,000 |        11.83 |               5.92 | 2.2x (expected ~4.0x for O(n²))
+       4,000 |        27.29 |               6.82 | 2.3x (expected ~4.0x for O(n²))
+       8,000 |        84.72 |              10.59 | 3.1x (expected ~4.0x for O(n²))
+      16,000 |       406.33 |              25.40 | 4.8x (expected ~4.0x for O(n²))
+
+Analysis:
+----------------------------------------------------------------------
+If time complexity is O(n):
+  - Doubling input should roughly double time (growth ~2x)
+  - Time per item should remain constant
+
+If time complexity is O(n²):
+  - Doubling input should roughly quadruple time (growth ~4x)
+  - Time per item should grow linearly with input size
+
+Current behavior shows O(n²) - this is the issue we need to fix.
+======================================================================
