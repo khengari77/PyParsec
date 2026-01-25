@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "project": "pyparsec",
+  "package": "pyparsec",
+  "repo": ".",
+  "branches": ["master"],
+
+  "benchmark_dir": "benchmarks/benchmarks",
+  "env_dir": "benchmarks/.asv/env",
+  "results_dir": "benchmarks/.asv/results",
+  "html_dir": "benchmarks/.asv/html",
+
+  "environment_type": "virtualenv",
+  "pythons": ["3.10", "3.12"],
+  "build_command": "python -m pip install -e .",
+  "install_command": "python -m pip install -e .[dev]",
+}

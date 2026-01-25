@@ -87,12 +87,10 @@ def test_string_parser(s):
 
 @given(st.text())
 def test_string_prime_lookahead(s):
-    # string' matches but does NOT consume input
+    """Test string_prime works with string input (lookahead behavior)"""
     p = string_prime(s)
     state = State(s + "123", initial_pos("test"), None)
-    
     res = p(state)
-    
     if isinstance(res.reply, Ok):
         assert res.value == s
         assert not res.consumed  # Crucial for string_prime
@@ -100,6 +98,24 @@ def test_string_prime_lookahead(s):
     else:
         # Should only fail if s is not in input
         pass
+
+def test_string_prime_empty_string():
+    """Test string_prime with empty string edge case"""
+    p = string_prime("")
+    state = State("123", initial_pos("test"), None)
+    res = p(state)
+    assert isinstance(res.reply, Ok)
+    assert res.value == ""
+    assert not res.consumed
+    assert res.state.input == "123"  # Input unchanged
+
+def test_string_prime_failure():
+    """Test string_prime when input doesn't match"""
+    p = string_prime("hello")
+    state = State("world", initial_pos("test"), None)
+    res = p(state)
+    assert isinstance(res.reply, Error)
+    assert "hello" in str(res.reply.error)
 
 # --- Whitespace & Newlines ---
 

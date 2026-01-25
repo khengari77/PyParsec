@@ -270,7 +270,7 @@ def _scan_op_chain(
     return Parsec(parse)
 
 def any_token() -> Parsec[str]:
-    return token(lambda t: str(t), lambda t: t if t else None)
+    return token(lambda t: str(t), lambda t: t)
 
 def not_followed_by(p: Parsec[Any]) -> Parsec[None]:
     def parse(state: State) -> ParseResult[None]:

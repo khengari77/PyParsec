@@ -34,4 +34,5 @@ allow-direct-references = true
 dev = [
     "hypothesis>=6.113.0",
     "pytest>=8.3.5",
+    "asv>=0.6.4"
 ]

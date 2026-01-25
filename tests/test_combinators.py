@@ -3,11 +3,7 @@ from hypothesis import given, strategies as st
 from pyparsec.Parsec import State, initial_pos, Ok, Error
 from pyparsec.Prim import run_parser, pure
 from pyparsec.Char import char, string, digit, any_char
-from pyparsec.Combinators import (
-    choice, count, between, option, option_maybe, optional,
-    many1, skip_many1, sep_by, sep_by1, end_by,
-    sep_end_by, chainl1, chainr1, eof, not_followed_by, many_till, look_ahead,
-)
+from pyparsec.Combinators import *
 
 def run(parser, input_str):
     return run_parser(parser, input_str)
@@ -173,3 +169,28 @@ def test_many_till():
     input_str = "<!--hello world-->"
     res, _ = run(p, input_str)
     assert "".join(res) == "hello world"
+
+@given(st.lists(st.integers()))
+def test_any_token_with_falsy_values(ints):
+    """Test any_token handles falsy values like 0, False"""
+    if not ints:
+        return
+    p = any_token()
+    state = State(ints, initial_pos("test"), None)
+    res = p(state)
+    assert isinstance(res.reply, Ok)
+    assert res.value == ints[0]
+
+def test_any_token_falsy_cases_explicit():
+    """Explicitly test the falsy cases that would fail with original bug"""
+    test_cases = [
+        [0, 1, 2],      # Zero
+        [False, True],  # False
+        ["", "a"],       # Empty string
+    ]
+    for case in test_cases:
+        p = any_token()
+        state = State(case, initial_pos("test"), None)
+        res = p(state)
+        assert isinstance(res.reply, Ok)
+        assert res.value == case[0]

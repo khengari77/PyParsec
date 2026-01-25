@@ -104,13 +104,13 @@ def string(s: str) -> Parsec[str]:
     """Parses the exact string s and returns it."""
     def show_tokens(tokens: str) -> str:
         return f"'{tokens}'"
-    # Use the standalone function update_pos_string instead of pos.update
-    return tokens(show_tokens, lambda pos, text: update_pos_string(pos, text), list(s)).label(f"'{s}'")
+    return tokens(show_tokens, update_pos_string, list(s)).label(f"'{s}'")
 
 # 18. string': Parses a string without consuming input on success
 def string_prime(s: str) -> Parsec[str]:
-    """Parses the string s without consuming input if successful."""
+    """Parses the string s without consuming input if successful.
+    Equivalent to Haskell's string' for character streams."""
     def show_tokens(tokens: str) -> str:
         return f"'{tokens}'"
-    return tokens_prime(show_tokens, lambda pos, text: update_pos_string(text), list(s)).label(f"'{s}'")
+    return tokens_prime(show_tokens, update_pos_string, list(s)).label(f"'{s}'")
 
