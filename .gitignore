@@ -1,6 +1,12 @@
 poetry.lock
 __pycache__/
 main*
-.*
+.DS_Store
+.idea/
+.vscode/
+.env
+.venv/
+!.github/
 !.gitignore
 test/*
+
