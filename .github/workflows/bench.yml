@@ -13,6 +13,11 @@ jobs:
         with:
           fetch-depth: 0  # helpful for asv comparisons/history
 
+      - name: Configure Git
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
