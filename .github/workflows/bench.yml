@@ -32,7 +32,11 @@ jobs:
           uv run asv machine --yes
           uv run asv run --quick
           uv run asv publish
-
+      
+      - name: Publish to GitHub Pages
+        run: |
+          uv run asv gh-pages
+          
       - name: Upload ASV output
         uses: actions/upload-artifact@v4
         with:
