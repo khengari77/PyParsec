@@ -40,6 +40,13 @@ jobs:
       
       - name: Publish to GitHub Pages
         run: |
+          uv run asv machine --yes
+          uv run asv run --quick
+          uv run asv publish
+          git fetch origin gh-pages:gh-pages || true
+          git checkout gh-pages
+          git pull origin gh-pages || true
+          git checkout -
           uv run asv gh-pages
           
       - name: Upload ASV output
