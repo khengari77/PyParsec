@@ -49,6 +49,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Restore ASV results cache
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/.asv/results
+          key: asv-results-${{ runner.os }}-${{ github.repository }}-${{ github.run_id }}
+          restore-keys: |
+            asv-results-${{ runner.os }}-${{ github.repository }}-
+
       - name: Configure Git
         run: |
           git config --global user.email "actions@github.com"
@@ -72,19 +80,3 @@ jobs:
           uv run asv machine --yes
           uv run asv run --quick
           uv run asv publish
-
-      - name: Publish to GitHub Pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          uv run asv gh-pages --no-push --rewrite
-          git push --force-with-lease origin gh-pages
-
-      - name: Upload ASV artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: asv-results
-          path: |
-            benchmarks/.asv/results
-            benchmarks/.asv/html
