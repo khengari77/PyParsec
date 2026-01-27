@@ -4,14 +4,22 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * 0"  # Sundays 03:00 UTC
+  push:
+    branches: [main]
+    paths: ["pyparsec/**", "benchmarks/**"]  # Only run on relevant changes
 
 jobs:
   asv:
     runs-on: ubuntu-latest
+    
+    # CRITICAL: Give the job permission to push to gh-pages
+    permissions:
+      contents: write
+    
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # helpful for asv comparisons/history
+          fetch-depth: 0  # Full history for ASV regression detection
 
       - name: Configure Git
         run: |
@@ -28,31 +36,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install uv
 
-      - name: Sync dependencies (uv)
-        run: |
-          uv sync --group dev
+      - name: Sync dependencies
+        run: uv sync --group dev
 
-      - name: Run ASV (quick)
+      - name: Run ASV
         run: |
           uv run asv machine --yes
           uv run asv run --quick
           uv run asv publish
-      
+
       - name: Publish to GitHub Pages
         env:
-          GH_PAGES_TOKEN: ${{ secrets.GH_PAGES_TOKEN }}
+          # Use built-in token instead of GH_PAGES_TOKEN
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          uv run asv machine --yes
-          uv run asv run --quick
-          uv run asv publish
-          git fetch origin gh-pages:gh-pages || true
-          git checkout gh-pages
-          git pull origin gh-pages || true
-          git checkout -
-          git remote set-url origin "https://x-access-token:${GH_PAGES_TOKEN}@github.com/khengari77/PyParsec.git"
-          uv run asv gh-pages
+          # Configure remote to use the token for authentication
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           
-      - name: Upload ASV output
+          # asv gh-pages handles branch creation/updates automatically
+          uv run asv gh-pages
+
+      - name: Upload ASV artifacts
         uses: actions/upload-artifact@v4
         with:
           name: asv-results
