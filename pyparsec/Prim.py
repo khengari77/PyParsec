@@ -88,63 +88,54 @@ def _many_accum(
     p: Parsec[T],
     empty_acc_value: AccType
 ) -> Parsec[AccType]:
-    """Iterative implementation of 'many' to avoid recursion depth issues."""
     def parse_accum(state_outer: State) -> ParseResult[AccType]:
-        current_acc: AccType = empty_acc_value
-        accum_state: State = state_outer 
+        current_acc: AccType = empty_acc_value.copy() if hasattr(empty_acc_value, "copy") else empty_acc_value
+        accum_state: State = state_outer
         consumed_overall: bool = False
-        
-        # We need to track the "ghost" error from the last failed attempt
         last_err: ParseError = ParseError.new_unknown(state_outer.pos)
 
         while True:
             res_p = p(accum_state)
 
             if isinstance(res_p.reply, Error):
-                # p failed.
                 if res_p.consumed:
-                    # Consumed Error: Fatal. Propagate immediately.
                     return ParseResult(res_p.reply, True)
                 else:
-                    # Empty Error: End of loop.
                     final_err = ParseError.merge(last_err, res_p.reply.error)
-                    
                     if consumed_overall:
                         return ParseResult.ok_consumed(current_acc, accum_state, final_err)
                     else:
                         return ParseResult.ok_empty(current_acc, accum_state, final_err)
 
-            # p succeeded (Ok)
-            ok_reply: Ok[T] = res_p.reply # type: ignore
-            
-            # Infinite loop check: Succeeded without consuming
+            ok_reply: Ok[T] = res_p.reply  # type: ignore
+
             if not res_p.consumed:
-                 return ParseResult.error_consumed(
+                return ParseResult.error_consumed(
                     ParseError.new_message(
                         accum_state.pos,
                         MessageType.MESSAGE,
                         "many: combinator applied to a parser that accepts an empty string."
                     )
-                 )
+                )
 
-            # Update accumulation
             consumed_overall = True
             current_acc = acc_func(ok_reply.value, current_acc)
             accum_state = ok_reply.state
-            last_err = ok_reply.error # Track potential ghost errors from the success
-            
+            last_err = ok_reply.error
+
     return Parsec(parse_accum)
 
 def many(p: Parsec[T]) -> Parsec[List[T]]:
-    """Parse zero or more occurrences of `p`."""
-    return _many_accum(lambda item, lst: lst + [item], p, [])
+    def _acc(item: T, lst: List[T]) -> List[T]:
+        lst.append(item)
+        return lst
+    return _many_accum(_acc, p, [])
 
 def many1(p: Parsec[T]) -> Parsec[List[T]]:
-    """Parse one or more occurrences of `p`."""
-    # 1. p.bind(...) ensures the first p succeeds.
-    # 2. _many_accum(..., [x]) continues parsing zero or more p's, 
-    #    appending them to the list starting with x.
-    return p.bind(lambda x: _many_accum(lambda item, lst: lst + [item], p, [x]))
+    def _acc(item: T, lst: List[T]) -> List[T]:
+        lst.append(item)
+        return lst
+    return p.bind(lambda x: _many_accum(_acc, p, [x]))
 
 def skip_many(p: Parsec[Any]) -> Parsec[None]:
     """Skips zero or more occurrences of `p`."""
