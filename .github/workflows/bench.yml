@@ -9,7 +9,21 @@ on:
     paths: ["pyparsec/**", "benchmarks/**"]  # Only run on relevant changes
 
 jobs:
+  check_performance_commit:
+    if: |
+      contains(github.event.head_commit.message, 'perf') ||
+      contains(github.event.head_commit.message, 'performance') ||
+      contains(github.event.head_commit.message, 'optimize')
+    runs-on: ubuntu-latest
+    outputs:
+      is_perf_commit: ${{ steps.check.outputs.is_perf }}
+    steps:
+      - id: check
+        run: |
+          echo "is_perf=true" >> $GITHUB_OUTPUT
   asv:
+    needs: check_performance_commit
+    if: needs.check_performance_commit.outputs.is_perf_commit == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     
     # CRITICAL: Give the job permission to push to gh-pages
@@ -54,7 +68,8 @@ jobs:
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           
           # asv gh-pages handles branch creation/updates automatically
-          uv run asv gh-pages
+          uv run asv gh-pages --no-push --rewrite
+          git push --force-with-lease origin gh-pages
 
       - name: Upload ASV artifacts
         uses: actions/upload-artifact@v4
