@@ -6,34 +6,48 @@ on:
     - cron: "0 3 * * 0"  # Sundays 03:00 UTC
   push:
     branches: [main]
-    paths: ["pyparsec/**", "benchmarks/**"]  # Only run on relevant changes
+    paths: ["pyparsec/**", "benchmarks/**"]
+
+concurrency:
+  group: asv-gh-pages
+  cancel-in-progress: false
 
 jobs:
   check_performance_commit:
-    if: |
-      contains(github.event.head_commit.message, 'perf') ||
-      contains(github.event.head_commit.message, 'performance') ||
-      contains(github.event.head_commit.message, 'optimize')
     runs-on: ubuntu-latest
     outputs:
       is_perf_commit: ${{ steps.check.outputs.is_perf }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - id: check
+        shell: bash
         run: |
-          echo "is_perf=true" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "is_perf=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          RANGE="${{ github.event.before }}..${{ github.sha }}"
+          if git log --format=%B $RANGE | grep -Eiq '(^perf:|\bperformance\b|\boptimi[sz]e\b|\[bench\]|\[asv\])'; then
+            echo "is_perf=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_perf=false" >> "$GITHUB_OUTPUT"
+          fi
+
   asv:
     needs: check_performance_commit
     if: needs.check_performance_commit.outputs.is_perf_commit == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    
-    # CRITICAL: Give the job permission to push to gh-pages
     permissions:
       contents: write
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for ASV regression detection
+          fetch-depth: 0
 
       - name: Configure Git
         run: |
@@ -61,14 +75,11 @@ jobs:
 
       - name: Publish to GitHub Pages
         env:
-          # Use built-in token instead of GH_PAGES_TOKEN
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Configure remote to use the token for authentication
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          
-          # asv gh-pages handles branch creation/updates automatically
-          uv run asv gh-pages --rewrite
+          uv run asv gh-pages --no-push --rewrite
+          git push --force-with-lease origin gh-pages
 
       - name: Upload ASV artifacts
         uses: actions/upload-artifact@v4
