@@ -39,6 +39,8 @@ jobs:
           uv run asv publish
       
       - name: Publish to GitHub Pages
+        env:
+          GH_PAGES_TOKEN: ${{ secrets.GH_PAGES_TOKEN }}
         run: |
           uv run asv machine --yes
           uv run asv run --quick
@@ -47,6 +49,7 @@ jobs:
           git checkout gh-pages
           git pull origin gh-pages || true
           git checkout -
+          git remote set-url origin "https://x-access-token:${GH_PAGES_TOKEN}@github.com/khengari77/PyParsec.git"
           uv run asv gh-pages
           
       - name: Upload ASV output
