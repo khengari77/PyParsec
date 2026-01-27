@@ -68,8 +68,7 @@ jobs:
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           
           # asv gh-pages handles branch creation/updates automatically
-          uv run asv gh-pages --no-push --rewrite
-          git push --force-with-lease origin gh-pages
+          uv run asv gh-pages --rewrite
 
       - name: Upload ASV artifacts
         uses: actions/upload-artifact@v4
