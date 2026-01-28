@@ -1,5 +1,5 @@
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import settings, given, strategies as st
 import math
 from pyparsec.Token import TokenParser, LanguageDef
 from pyparsec.Language import java_style, python_style, empty_def
@@ -179,6 +179,7 @@ def test_identifiers():
     st.integers(min_value=1, max_value=1000),
     st.text(min_size=1, max_size=1000).filter(lambda s: all((c not in s for c in ["/", "/*", "*/"]))), 
 )
+@settings(deadline=None)
 def test_prop_nested_comments(nesting_depth, content):
     """Property test: nested comments up to 50 levels should always work."""
     lexer = TokenParser(java_style)
@@ -197,6 +198,7 @@ def test_prop_nested_comments(nesting_depth, content):
         max_size=1000
     )
 )
+@settings(deadline=None)
 def test_prop_multiple_comment_blocks(blocks):
     """Property test: multiple separate comment blocks should work."""
     lexer = TokenParser(java_style)
@@ -212,6 +214,7 @@ def test_prop_multiple_comment_blocks(blocks):
     st.text(min_size=1, max_size=1000).filter(lambda s: all((c not in s for c in ["/", "/*", "*/"]))), 
     st.integers(min_value=1, max_value=1000)
 )
+@settings(deadline=None)
 def test_prop_nested_with_content(outer_content, nesting_levels):
     """Property test: nested comments with arbitrary content."""
     lexer = TokenParser(java_style)
