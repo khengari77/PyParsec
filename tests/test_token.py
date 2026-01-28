@@ -174,3 +174,57 @@ def test_identifiers():
     
     # Check reserved op matches (returns None on success)
     assert run(lexer.reserved_op("+="), "+=")[0] is None
+
+@given(
+    st.integers(min_value=1, max_value=1000),
+    st.text(min_size=1, max_size=1000).filter(lambda s: s not in ["/*", "*/"]), 
+)
+def test_prop_nested_comments(nesting_depth, content):
+    """Property test: nested comments up to 50 levels should always work."""
+    lexer = TokenParser(java_style)
+    open_comments = "/*" * nesting_depth
+    close_comments = "*/" * nesting_depth
+    input_str = f"{open_comments} {content} {close_comments} 42"
+    p = lexer.white_space >> lexer.integer
+    res, err = run(p, input_str)
+    assert res == 42, f"Failed to parse with {nesting_depth} nesting levels"
+    assert err is None
+
+@given(
+    st.lists(
+        st.text(min_size=1, max_size=1000).filter(lambda s: s not in ["/*", "*/"]), 
+        min_size=1,
+        max_size=1000
+    )
+)
+def test_prop_multiple_comment_blocks(blocks):
+    """Property test: multiple separate comment blocks should work."""
+    lexer = TokenParser(java_style)
+    # Create input with multiple comment blocks
+    comment_blocks = " ".join(f"/*{block}*/" for block in blocks)
+    input_str = f"{comment_blocks} 42"
+    p = lexer.white_space >> lexer.integer
+    res, err = run(p, input_str)
+    assert res == 42
+    assert err is None
+
+@given(
+    st.text(min_size=1, max_size=1000).filter(lambda s: s not in ["/*", "*/"]), 
+    st.integers(min_value=1, max_value=1000)
+)
+def test_prop_nested_with_content(outer_content, nesting_levels):
+    """Property test: nested comments with arbitrary content."""
+    lexer = TokenParser(java_style)
+    # Create nested structure with content at each level
+    def build_nested(levels, content):
+        if levels == 0:
+            return content 
+        inner = build_nested(levels - 1, content)
+        return f"/* outer {inner} outer */"
+    nested_comment = build_nested(nesting_levels, outer_content)
+    print(nested_comment)
+    input_str = f"{nested_comment} 42"
+    p = lexer.white_space >> lexer.integer
+    res, err = run(p, input_str)
+    assert res == 42
+    assert err is None

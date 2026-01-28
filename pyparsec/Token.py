@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Callable, Optional, Any, Union
-from .Parsec import Parsec
+from .Parsec import Parsec, State, ParseResult, ParseError, MessageType, Ok, Error, update_pos_char
 from .Prim import try_parse, pure, fail, skip_many, many, lazy
 from .Char import (
     char, string, satisfy, one_of, none_of, 
@@ -71,13 +71,12 @@ class TokenParser:
             .map(lambda ds: int("".join(ds), 8))
         )
         
-        # Handles 0x..., 0o..., or decimal
         self.natural = self.lexeme(choice([
             char('0') >> choice([
                 self.hexadecimal,
                 self.octal,
-                self.decimal, # Handles 0 followed by digits (e.g. 01)
-                pure(0)       # Fix: Handles standalone 0
+                self.decimal,
+                pure(0)
             ]),
             self.decimal
         ]))
@@ -99,9 +98,7 @@ class TokenParser:
                    self.decimal.map(lambda d: f"e{sign}{d}"))
 
         def float_val():
-            # decimal part
             return many1(digit()).bind(lambda ds:
-                   # MUST have fraction OR exponent (otherwise it's an integer)
                    choice([
                        fraction().bind(lambda f: 
                            option("", exponent()).map(lambda e: float("".join(ds) + f + e))
@@ -168,18 +165,51 @@ class TokenParser:
             end_p = try_parse(string(self.lang.comment_end))
             marker_chars = list(set(self.lang.comment_start[:1] + self.lang.comment_end[:1]))
             
-            def in_comment() -> Parsec[None]:
-                if self.lang.nested_comments:
-                    return (end_p >> pure(None)) | \
-                           (start_p >> lazy(in_comment) >> lazy(in_comment)) | \
-                           (skip_many1(none_of(marker_chars)) >> lazy(in_comment)) | \
-                           (one_of(marker_chars) >> lazy(in_comment))
-                else:
-                    return (end_p >> pure(None)) | \
-                           (skip_many1(none_of(marker_chars)) >> lazy(in_comment)) | \
-                           (one_of(marker_chars) >> lazy(in_comment))
+            scan_non_markers = skip_many1(none_of(marker_chars))
+            scan_one_marker = one_of(marker_chars)
 
-            block_comment = start_p >> lazy(in_comment)
+            def parse_block_comment(state: State) -> ParseResult[None]:
+                res = start_p(state)
+                if isinstance(res.reply, Error):
+                    return res
+                
+                curr_state = res.reply.state
+                nesting = 1
+                
+                while nesting > 0:
+                    res_end = end_p(curr_state)
+                    if isinstance(res_end.reply, Ok):
+                        nesting -= 1
+                        curr_state = res_end.reply.state
+                        continue
+                    
+                    if self.lang.nested_comments:
+                        res_start = start_p(curr_state)
+                        if isinstance(res_start.reply, Ok):
+                            nesting += 1
+                            curr_state = res_start.reply.state
+                            continue
+
+                    if not curr_state.input:
+                         return ParseResult.error_consumed(
+                             ParseError.new_message(curr_state.pos, MessageType.UNEXPECT, "end of input in comment")
+                         )
+                    
+                    res_skip = scan_non_markers(curr_state)
+                    if isinstance(res_skip.reply, Ok):
+                        curr_state = res_skip.reply.state
+                        continue
+                        
+                    res_mk = scan_one_marker(curr_state)
+                    if isinstance(res_mk.reply, Ok):
+                        curr_state = res_mk.reply.state
+                        continue
+                    
+                    return ParseResult.error_consumed(ParseError.new_unknown(curr_state.pos))
+
+                return ParseResult.ok_consumed(None, curr_state, ParseError.new_unknown(curr_state.pos))
+
+            block_comment = Parsec(parse_block_comment)
             parsers.append(block_comment)
 
         return skip_many(choice(parsers))
