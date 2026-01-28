@@ -84,7 +84,7 @@ def _make_level_parser(ops: List[Operator], term: Parsec[T]) -> Parsec[T]:
         
     if infix_n:
         op_n = choice(infix_n)
-        def non_assoc_logic(x):
+        def non_assoc_logic(x: T) -> Parsec[T]:
             return op_n.bind(lambda f: 
                    result_parser.bind(lambda y: 
                    pure(f(x, y)))) | pure(x)

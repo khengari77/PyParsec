@@ -89,15 +89,15 @@ class TokenParser:
 
         # --- Floats ---
         # Logic: decimal . fraction . exponent? OR decimal . exponent
-        def fraction():
+        def fraction() -> Parsec[str]:
             return char('.') >> many1(digit()).map(lambda ds: "." + "".join(ds))
         
-        def exponent():
+        def exponent() -> Parsec[str]:
             return one_of(['e', 'E']) >> \
                    option("", one_of(['+', '-'])) .bind(lambda sign: \
                    self.decimal.map(lambda d: f"e{sign}{d}"))
 
-        def float_val():
+        def float_val() -> Parsec[float]:
             return many1(digit()).bind(lambda ds:
                    choice([
                        fraction().bind(lambda f: 
@@ -119,17 +119,17 @@ class TokenParser:
             '"': '"', "'": "'", 'b': '\b', 'f': '\f'
         }
         
-        def escape_code():
+        def escape_code() -> Parsec[str]:
             return char('\\') >> choice([
                 one_of(list(self._esc_map.keys())).map(lambda c: self._esc_map[c]),
                 # Could add numeric escapes here (\uXXXX etc)
                 any_char() # Fallback: just return the char (e.g. \a -> a)
             ])
 
-        def char_letter(quote):
+        def char_letter(quote: str) -> Parsec[str]:
             return satisfy(lambda c: c != quote and c != '\\')
 
-        def string_char(quote):
+        def string_char(quote:  str) -> Parsec[str]:
             return char_letter(quote) | escape_code()
 
         self.char_literal = self.lexeme(

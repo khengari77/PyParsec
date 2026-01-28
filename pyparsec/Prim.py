@@ -1,4 +1,4 @@
-from typing import TypeVar, Callable, Any, Optional, Tuple, List, Sequence, Union
+from typing import TypeVar, Callable, Any, Optional, Tuple, List, Sequence, Union, overload
 from .Parsec import (
     Parsec, State, ParseError, SourcePos, ParseResult, 
     MessageType, Message, Reply, Ok, Error, 
@@ -10,6 +10,7 @@ T = TypeVar('T')
 U = TypeVar('U')
 S = TypeVar('S')  # Input element type (e.g., char, int, Token)
 AccType = TypeVar('AccType') # Accumulator type for many
+
 
 def pure(value: T) -> Parsec[T]:
     """Return a parser that succeeds with a value without consuming input."""
@@ -141,6 +142,22 @@ def skip_many(p: Parsec[Any]) -> Parsec[None]:
     """Skips zero or more occurrences of `p`."""
     return _many_accum(lambda _, __: None, p, None)
 
+@overload
+def run_parser(
+    parser: 'Parsec[T]',
+    input_data: Union[str, Sequence[Any]],
+    user_state: Any = ...,
+    source_name: str = ...
+) -> Tuple[T, None]: ...
+
+@overload
+def run_parser(
+    parser: 'Parsec[T]',
+    input_data: Union[str, Sequence[Any]],
+    user_state: Any = ...,
+    source_name: str = ...
+) -> Tuple[None, 'ParseError']: ...
+
 def run_parser(
     parser: Parsec[T], 
     input_data: Union[str, Sequence[Any]], 
@@ -156,7 +173,7 @@ def run_parser(
     else:
         return None, res.reply.error
 
-def parse_test(parser: Parsec[T], input_data: Union[str, Sequence]) -> None:
+def parse_test(parser: Parsec[T], input_data: Union[str, Sequence[Any]]) -> None:
     val, err = run_parser(parser, input_data)
     if err:
         print(err)

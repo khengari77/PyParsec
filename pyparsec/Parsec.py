@@ -149,10 +149,10 @@ class Ok(Generic[T]):
     error: ParseError
 
 @dataclass
-class Error(Generic[T]):
+class Error:
     error: ParseError
 
-Reply = Union[Ok[T], Error[T]]
+Reply = Union[Ok[T], Error]
 
 @dataclass(frozen=True)
 class ParseResult(Generic[T]):

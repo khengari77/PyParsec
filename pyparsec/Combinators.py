@@ -21,7 +21,7 @@ def choice(parsers: List[Parsec[T]]) -> Parsec[T]:
             
             if isinstance(res.reply, Ok):
                 # If a choice succeeds, we merge previous errors (failed attempts)
-                # into the success result so the user knows what else was expected.
+                # into the success result so the user knows what else was /expected.
                 final_err = ParseError.merge(max_error, res.reply.error)
                 if res.consumed:
                     return ParseResult.ok_consumed(res.reply.value, res.reply.state, final_err)
@@ -80,7 +80,7 @@ def option(x: T, p: Parsec[T]) -> Parsec[T]:
     return p | pure(x)
 
 def option_maybe(p: Parsec[T]) -> Parsec[Optional[T]]:
-    return p | pure(None)
+    return p.map(lambda x: cast(Optional[T], x)) | pure(cast(Optional[T], None))
 
 def optional(p: Parsec[T]) -> Parsec[None]:
     return (p >> (lambda _: pure(None))) | pure(None)
@@ -109,7 +109,7 @@ def sep_end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     def parse(state: State) -> ParseResult[List[T]]:
         res_p = p(state)
         if isinstance(res_p.reply, Error):
-            return res_p 
+            return ParseResult(Error(res_p.reply.error), res_p.consumed)
         
         ok_reply: Ok[T] = res_p.reply
         results = [ok_reply.value]
@@ -230,7 +230,8 @@ def _scan_op_chain(
     """Helper for chainr1: parses x (op x)* into a flat list."""
     def parse(state: State) -> ParseResult[List[Union[T, Any]]]:
         res_first = term_parser(state)
-        if isinstance(res_first.reply, Error): return res_first
+        if isinstance(res_first.reply, Error): 
+            return ParseResult(Error(res_first.reply.error), res_first.consumed)
         
         ok_first: Ok[T] = res_first.reply
         results: List[Union[T, Any]] = [ok_first.value]
@@ -288,7 +289,7 @@ def eof() -> Parsec[None]:
 
 def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[List[T]]:
     def scan(state: State) -> ParseResult[List[T]]:
-        results = []
+        results: list[T] = []
         curr = state
         consumed = False
         err = ParseError.new_unknown(state.pos)
