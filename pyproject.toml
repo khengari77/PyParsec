@@ -3,7 +3,7 @@ name = "pyparsec"
 version = "0.1.0"
 description = "A Python parser combinator library inspired by Haskell's Parsec."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
     { name = "khengari77", email = "khengari77@gmail.com" }
@@ -12,11 +12,6 @@ keywords = ["parser", "combinators", "parsing"]
 urls = { Repository = "https://github.com/khengari77/PyParsec" }
 
 dependencies = []
-
-[project.optional-dependencies]
-examples = [
-    "pipe @ git+https://github.com/khengari77/Pipe.git@main"
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -34,5 +29,23 @@ allow-direct-references = true
 dev = [
     "hypothesis>=6.113.0",
     "pytest>=8.3.5",
-    "asv>=0.6.4"
+    "asv>=0.6.4",
+    "mypy>=1.18.0", 
+    "types-setuptools"
 ]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "pyparsec.*"
+disallow_any_generics = false

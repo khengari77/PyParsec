@@ -143,20 +143,18 @@ class ParseError:
 
 # --- Reply Types (Algebraic Data Type) ---
 @dataclass
-class Reply(Generic[T]):
-    pass
-
-@dataclass
-class Ok(Reply[T]):
+class Ok(Generic[T]):
     value: T
     state: State[Any] # Generic over Input
     error: ParseError
 
 @dataclass
-class Error(Reply[T]):
+class Error(Generic[T]):
     error: ParseError
 
-@dataclass
+Reply = Union[Ok[T], Error[T]]
+
+@dataclass(frozen=True)
 class ParseResult(Generic[T]):
     reply: Reply[T]
     consumed: bool
@@ -177,7 +175,7 @@ class ParseResult(Generic[T]):
     def error(self) -> ParseError:
         if isinstance(self.reply, Ok):
             return self.reply.error
-        return self.reply.error # Error has .error field too
+        return self.reply.error
 
     @staticmethod
     def ok_consumed(value: T, new_state: State, err: ParseError) -> 'ParseResult[T]':
@@ -208,14 +206,14 @@ class Parsec(Generic[T]):
 
     def bind(self, f: Callable[[T], 'Parsec[U]']) -> 'Parsec[U]':
         def parse(state: State) -> ParseResult[U]:
-            res_self = self(state) 
+            res_self = self(state)
             
             # Explicit failure check
             if isinstance(res_self.reply, Error):
-                return ParseResult(res_self.reply, res_self.consumed) # type: ignore
+                return ParseResult(res_self.reply, res_self.consumed)
 
             # Self succeeded
-            ok_reply: Ok[T] = res_self.reply # type: ignore
+            ok_reply: Ok[T] = res_self.reply 
             next_parser = f(ok_reply.value)
             
             res_next = next_parser(ok_reply.state)
@@ -228,7 +226,7 @@ class Parsec(Generic[T]):
                 return ParseResult(Error(merged_err), consumed_overall)
             
             # Both OK
-            ok_next: Ok[U] = res_next.reply # type: ignore
+            ok_next: Ok[U] = res_next.reply 
             return ParseResult(
                 Ok(ok_next.value, ok_next.state, merged_err),
                 consumed_overall
@@ -248,7 +246,7 @@ class Parsec(Generic[T]):
             
             if not res2.consumed and isinstance(res2.reply, Error):
                 # Both Empty Error -> Merge
-                merged_err = ParseError.merge(res1.reply.error, res2.reply.error) # type: ignore
+                merged_err = ParseError.merge(res1.reply.error, res2.reply.error) 
                 return ParseResult.error_empty(merged_err)
                 
             return res2
@@ -282,7 +280,7 @@ class Parsec(Generic[T]):
             return self.bind(lambda _: other)
         
         # Bind logic: self >>= other
-        return self.bind(other) # type: ignore
+        return self.bind(other) 
 
     def label(self, msg: str) -> 'Parsec[T]':
         def parse(state: State) -> ParseResult[T]:

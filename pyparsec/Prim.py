@@ -107,7 +107,7 @@ def _many_accum(
                     else:
                         return ParseResult.ok_empty(current_acc, accum_state, final_err)
 
-            ok_reply: Ok[T] = res_p.reply  # type: ignore
+            ok_reply: Ok[T] = res_p.reply  
 
             if not res_p.consumed:
                 return ParseResult.error_consumed(
@@ -143,7 +143,7 @@ def skip_many(p: Parsec[Any]) -> Parsec[None]:
 
 def run_parser(
     parser: Parsec[T], 
-    input_data: Union[str, Sequence], 
+    input_data: Union[str, Sequence[Any]], 
     user_state: Any = None, 
     source_name: str = ""
 ) -> Tuple[Optional[T], Optional[ParseError]]:
@@ -170,18 +170,19 @@ def tokens(
 ) -> Parsec[Sequence[S]]:
     """
     Polymorphic tokens parser.
-    Optimized for strings/bytes, works for generic lists.
     """
     def parse(state: State) -> ParseResult[Sequence[S]]:
         input_stream = state.input
         
         # 1. Text Optimization (str or bytes)
         if isinstance(input_stream, (str, bytes)):
-            target = to_match
+            target: Any = to_match
             # Ensure type compatibility
             if isinstance(to_match, list):
-                if isinstance(input_stream, str): target = "".join(to_match)
-                elif isinstance(input_stream, bytes): target = bytes(to_match)
+                if isinstance(input_stream, str): 
+                    target = "".join(to_match)
+                elif isinstance(input_stream, bytes): 
+                    target = bytes(to_match)
 
             if input_stream.startswith(target):
                 matched = target
@@ -189,7 +190,6 @@ def tokens(
                 if isinstance(input_stream, str):
                     new_pos = update_pos_string(state.pos, matched)
                 else:
-                    # Bytes fallback or user provided logic
                     new_pos = next_pos_fn(state.pos, matched)
                     
                 new_state = State(input_stream[len(matched):], new_pos, state.user)
