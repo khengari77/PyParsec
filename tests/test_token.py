@@ -177,7 +177,7 @@ def test_identifiers():
 
 @given(
     st.integers(min_value=1, max_value=1000),
-    st.text(min_size=1, max_size=1000).filter(lambda s: s not in ["/*", "*/"]), 
+    st.text(min_size=1, max_size=1000).filter(lambda s: all((c not in s for c in ["/", "/*", "*/"]))), 
 )
 def test_prop_nested_comments(nesting_depth, content):
     """Property test: nested comments up to 50 levels should always work."""
@@ -192,7 +192,7 @@ def test_prop_nested_comments(nesting_depth, content):
 
 @given(
     st.lists(
-        st.text(min_size=1, max_size=1000).filter(lambda s: s not in ["/*", "*/"]), 
+        st.text(min_size=1, max_size=1000).filter(lambda s: all((c not in s for c in ["/", "/*", "*/"]))), 
         min_size=1,
         max_size=1000
     )
@@ -209,7 +209,7 @@ def test_prop_multiple_comment_blocks(blocks):
     assert err is None
 
 @given(
-    st.text(min_size=1, max_size=1000).filter(lambda s: s not in ["/*", "*/"]), 
+    st.text(min_size=1, max_size=1000).filter(lambda s: all((c not in s for c in ["/", "/*", "*/"]))), 
     st.integers(min_value=1, max_value=1000)
 )
 def test_prop_nested_with_content(outer_content, nesting_levels):
