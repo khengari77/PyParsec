@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List, Callable, TypeVar, Union
+from typing import List, Callable, TypeVar, Union, Generic
 from .Parsec import Parsec
 from .Combinators import choice, chainl1, chainr1
 from .Prim import pure, fail
@@ -13,34 +13,34 @@ class Assoc(Enum):
     RIGHT = auto()
 
 @dataclass
-class Operator:
+class Operator(Generic[T]):
     pass
 
 @dataclass
-class Infix(Operator):
+class Infix(Operator[T]):
     parser: Parsec[Callable[[T, T], T]]
     assoc: Assoc
 
 @dataclass
-class Prefix(Operator):
+class Prefix(Operator[T]):
     parser: Parsec[Callable[[T], T]]
 
 @dataclass
-class Postfix(Operator):
+class Postfix(Operator[T]):
     parser: Parsec[Callable[[T], T]]
 
-def build_expression_parser(table: List[List[Operator]], simple_term: Parsec[T]) -> Parsec[T]:
+def build_expression_parser(table: List[List[Operator[T]]], simple_term: Parsec[T]) -> Parsec[T]:
     term = simple_term
     for ops in table:
         term = _make_level_parser(ops, term)
     return term
 
 def _make_level_parser(ops: List[Operator], term: Parsec[T]) -> Parsec[T]:
-    infix_r = []
-    infix_l = []
-    infix_n = []
-    prefix  = []
-    postfix = []
+    infix_r: List[Parsec[Callable[[T, T], T]]] = []
+    infix_l: List[Parsec[Callable[[T, T], T]]] = []
+    infix_n: List[Parsec[Callable[[T, T], T]]] = []
+    prefix: List[Parsec[Callable[[T], T]]] = []
+    postfix: List[Parsec[Callable[[T], T]]] = []
     
     for op in ops:
         if isinstance(op, Infix):
@@ -75,11 +75,11 @@ def _make_level_parser(ops: List[Operator], term: Parsec[T]) -> Parsec[T]:
     result_parser = term_parser
     
     if infix_l:
-        op_l = choice(infix_l)
+        op_l: Parsec[Callable[[T, T], T]] = choice(infix_l)
         result_parser = chainl1(result_parser, op_l)
         
     if infix_r:
-        op_r = choice(infix_r)
+        op_r: Parsec[Callable[[T, T], T]] = choice(infix_r)
         result_parser = chainr1(result_parser, op_r)
         
     if infix_n:

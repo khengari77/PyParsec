@@ -1,4 +1,4 @@
-from typing import List, Optional, Callable, Any, TypeVar, Union
+from typing import List, Optional, Callable, Any, TypeVar, Union, cast
 from .Parsec import Parsec, State, ParseError, ParseResult, MessageType, Reply, Ok, Error
 from .Prim import pure, fail, try_parse, token, many, many1, look_ahead
 
@@ -210,10 +210,10 @@ def chainr1(p: Parsec[T], op: Parsec[Callable[[T, T], T]]) -> Parsec[T]:
     def apply_right_associative(scan_results_val: List[Union[T, Callable[[T, T], T]]]) -> T:
         if not scan_results_val: raise ValueError("Empty chain")
         
-        acc = scan_results_val[-1]
+        acc = cast(T, scan_results_val[-1])
         for i in range(len(scan_results_val) - 2, -1, -2):
-            op_func = scan_results_val[i]
-            left_val = scan_results_val[i-1]
+            op_func = cast(Callable[[T, T], T], scan_results_val[i])
+            left_val = cast(T, scan_results_val[i-1])
             acc = op_func(left_val, acc)
             
         return acc

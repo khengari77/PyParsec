@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Sequence
 from .Parsec import Parsec, State, ParseError, SourcePos, ParseResult, MessageType, update_pos_string
 from .Prim import token, tokens, tokens_prime, pure, many, fail, try_parse, skip_many  # Assumed from prior implementation
 
@@ -102,15 +102,18 @@ def any_char() -> Parsec[str]:
 # 17. string: Parses a specific string
 def string(s: str) -> Parsec[str]:
     """Parses the exact string s and returns it."""
-    def show_tokens(tokens: str) -> str:
-        return f"'{tokens}'"
-    return tokens(show_tokens, update_pos_string, list(s)).label(f"'{s}'")
+    def show_tokens(toks: Sequence[str]) -> str:
+        return f"'{''.join(toks)}'"
+    return tokens(show_tokens, lambda p, t: update_pos_string(p, "".join(t)), list(s))\
+        .map(lambda chars: "".join(chars))\
+        .label(f"'{s}'")
 
 # 18. string': Parses a string without consuming input on success
 def string_prime(s: str) -> Parsec[str]:
-    """Parses the string s without consuming input if successful.
-    Equivalent to Haskell's string' for character streams."""
-    def show_tokens(tokens: str) -> str:
-        return f"'{tokens}'"
-    return tokens_prime(show_tokens, update_pos_string, list(s)).label(f"'{s}'")
+    """Parses the string s without consuming input on success."""
+    def show_tokens(toks: Sequence[str]) -> str:
+        return f"'{''.join(toks)}'"
+    return tokens_prime(show_tokens, lambda p, t: update_pos_string(p, "".join(t)), list(s))\
+        .map(lambda chars: "".join(chars))\
+        .label(f"'{s}'")
 

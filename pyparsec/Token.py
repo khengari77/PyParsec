@@ -153,7 +153,7 @@ class TokenParser:
         if not self.lang.comment_start and not self.lang.comment_line:
             return skip_many(space())
         
-        parsers = [space()]
+        parsers: List[Parsec[Any]] = [space()]
 
         if self.lang.comment_line:
             line_comment = try_parse(string(self.lang.comment_line)) >> \
@@ -171,7 +171,7 @@ class TokenParser:
             def parse_block_comment(state: State) -> ParseResult[None]:
                 res = start_p(state)
                 if isinstance(res.reply, Error):
-                    return res
+                    return ParseResult(Error(res.reply.error), res.consumed)
                 
                 curr_state = res.reply.state
                 nesting = 1
