@@ -1,15 +1,17 @@
 from dataclasses import dataclass, field
-from typing import List, Callable, Optional, Any, Union
+from typing import List, Callable, Optional, Any, Union, TypeVar, cast
 from .Parsec import Parsec, State, ParseResult, ParseError, MessageType, Ok, Error, update_pos_char
-from .Prim import try_parse, pure, fail, skip_many, many, lazy
+from .Prim import try_parse, pure, fail, skip_many, many, lazy, many1
 from .Char import (
     char, string, satisfy, one_of, none_of, 
     digit, hex_digit, oct_digit, space, any_char
 )
 from .Combinators import (
-    choice, skip_many1, between, sep_by, sep_by1, many1, 
+    choice, skip_many1, between, sep_by, sep_by1, 
     not_followed_by, option, option_maybe
 )
+
+T = TypeVar('T')
 
 @dataclass
 class LanguageDef:
@@ -36,42 +38,28 @@ class TokenParser:
         self.lang = lang
         
         # --- Whitespace & Comments ---
-        self.white_space = self._make_white_space()
-        
-        # --- Lexeme Helper (skips trailing whitespace) ---
-        self.lexeme = lambda p: p < self.white_space
-        self.symbol = lambda name: self.lexeme(string(name))
+        self.white_space: Parsec[None] = self._make_white_space()
         
         # --- Symbols ---
-        self.parens = lambda p: between(self.symbol("("), self.symbol(")"), p)
-        self.braces = lambda p: between(self.symbol("{"), self.symbol("}"), p)
-        self.angles = lambda p: between(self.symbol("<"), self.symbol(">"), p)
-        self.brackets = lambda p: between(self.symbol("["), self.symbol("]"), p)
-        
-        self.semi = self.symbol(";")
-        self.comma = self.symbol(",")
-        self.colon = self.symbol(":")
-        self.dot = self.symbol(".")
-        
-        self.semi_sep = lambda p: sep_by(p, self.semi)
-        self.semi_sep1 = lambda p: sep_by1(p, self.semi)
-        self.comma_sep = lambda p: sep_by(p, self.comma)
-        self.comma_sep1 = lambda p: sep_by1(p, self.comma)
+        self.semi: Parsec[str] = self.symbol(";")
+        self.comma: Parsec[str] = self.symbol(",")
+        self.colon: Parsec[str] = self.symbol(":")
+        self.dot: Parsec[str] = self.symbol(".")
         
         # --- Integers ---
-        self.decimal = self.lexeme(many1(digit()).map(lambda ds: int("".join(ds))))
+        self.decimal: Parsec[int] = self.lexeme(many1(digit()).map(lambda ds: int("".join(ds))))
         
-        self.hexadecimal = self.lexeme(
+        self.hexadecimal: Parsec[int] = self.lexeme(
             (one_of(['x', 'X']) >> many1(hex_digit()))
             .map(lambda ds: int("".join(ds), 16))
         )
         
-        self.octal = self.lexeme(
+        self.octal: Parsec[int] = self.lexeme(
             (one_of(['o', 'O']) >> many1(oct_digit()))
             .map(lambda ds: int("".join(ds), 8))
         )
         
-        self.natural = self.lexeme(choice([
+        self.natural: Parsec[int] = self.lexeme(choice([
             char('0') >> choice([
                 self.hexadecimal,
                 self.octal,
@@ -81,14 +69,13 @@ class TokenParser:
             self.decimal
         ]))
         
-        self.integer = self.lexeme(
+        self.integer: Parsec[int] = self.lexeme(
             (char('-') >> self.natural.map(lambda n: -n)) |
             (char('+') >> self.natural) |
             self.natural
         )
 
         # --- Floats ---
-        # Logic: decimal . fraction . exponent? OR decimal . exponent
         def fraction() -> Parsec[str]:
             return char('.') >> many1(digit()).map(lambda ds: "." + "".join(ds))
         
@@ -106,14 +93,13 @@ class TokenParser:
                        exponent().map(lambda e: float("".join(ds) + e))
                    ]))
 
-        self.float = self.lexeme(
+        self.float: Parsec[float] = self.lexeme(
             (char('-') >> float_val().map(lambda f: -f)) |
             (char('+') >> float_val()) |
             float_val()
         )
 
         # --- Chars & Strings ---
-        # Escape codes map
         self._esc_map = {
             'n': '\n', 'r': '\r', 't': '\t', '\\': '\\', 
             '"': '"', "'": "'", 'b': '\b', 'f': '\f'
@@ -122,8 +108,7 @@ class TokenParser:
         def escape_code() -> Parsec[str]:
             return char('\\') >> choice([
                 one_of(list(self._esc_map.keys())).map(lambda c: self._esc_map[c]),
-                # Could add numeric escapes here (\uXXXX etc)
-                any_char() # Fallback: just return the char (e.g. \a -> a)
+                any_char() 
             ])
 
         def char_letter(quote: str) -> Parsec[str]:
@@ -132,27 +117,68 @@ class TokenParser:
         def string_char(quote:  str) -> Parsec[str]:
             return char_letter(quote) | escape_code()
 
-        self.char_literal = self.lexeme(
+        self.char_literal: Parsec[str] = self.lexeme(
             between(char("'"), char("'"), string_char("'"))
         )
 
-        self.string_literal = self.lexeme(
+        self.string_literal: Parsec[str] = self.lexeme(
             between(char('"'), char('"'), many(string_char('"')))
             .map(lambda chars: "".join(chars))
         )
         
         # --- Identifiers ---
-        self.identifier = self.lexeme(self._make_identifier())
-        self.reserved = lambda name: self.lexeme(self._make_reserved(name))
+        self.identifier: Parsec[str] = self.lexeme(self._make_identifier())
         
         # --- Operators ---
-        self.operator = self.lexeme(self._make_operator())
-        self.reserved_op = lambda name: self.lexeme(self._make_reserved_op(name))
+        self.operator: Parsec[str] = self.lexeme(self._make_operator())
+
+    # --- Methods (Previously Lambdas) ---
+
+    def lexeme(self, p: Parsec[T]) -> Parsec[T]:
+        """Parses p, then skips trailing whitespace."""
+        return p < self.white_space
+
+    def symbol(self, name: str) -> Parsec[str]:
+        """Parses a string symbol, then skips trailing whitespace."""
+        return self.lexeme(string(name))
+
+    def parens(self, p: Parsec[T]) -> Parsec[T]:
+        return between(self.symbol("("), self.symbol(")"), p)
+
+    def braces(self, p: Parsec[T]) -> Parsec[T]:
+        return between(self.symbol("{"), self.symbol("}"), p)
+
+    def angles(self, p: Parsec[T]) -> Parsec[T]:
+        return between(self.symbol("<"), self.symbol(">"), p)
+
+    def brackets(self, p: Parsec[T]) -> Parsec[T]:
+        return between(self.symbol("["), self.symbol("]"), p)
+
+    def semi_sep(self, p: Parsec[T]) -> Parsec[List[T]]:
+        return sep_by(p, self.semi)
+
+    def semi_sep1(self, p: Parsec[T]) -> Parsec[List[T]]:
+        return sep_by1(p, self.semi)
+
+    def comma_sep(self, p: Parsec[T]) -> Parsec[List[T]]:
+        return sep_by(p, self.comma)
+
+    def comma_sep1(self, p: Parsec[T]) -> Parsec[List[T]]:
+        return sep_by1(p, self.comma)
+
+    def reserved(self, name: str) -> Parsec[None]:
+        return self.lexeme(self._make_reserved(name))
+
+    def reserved_op(self, name: str) -> Parsec[None]:
+        return self.lexeme(self._make_reserved_op(name))
+
+    # --- Internal Builders ---
 
     def _make_white_space(self) -> Parsec[None]:
         if not self.lang.comment_start and not self.lang.comment_line:
             return skip_many(space())
         
+        # Fix: Annotate list to handle Parsec[str] and Parsec[None] variance issue
         parsers: List[Parsec[Any]] = [space()]
 
         if self.lang.comment_line:
@@ -171,6 +197,7 @@ class TokenParser:
             def parse_block_comment(state: State) -> ParseResult[None]:
                 res = start_p(state)
                 if isinstance(res.reply, Error):
+                    # Fix: Ensure Return type matches ParseResult[None]
                     return ParseResult(Error(res.reply.error), res.consumed)
                 
                 curr_state = res.reply.state
