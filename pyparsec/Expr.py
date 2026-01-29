@@ -43,7 +43,7 @@ def build_expression_parser(table: List[List[Operator[T]]], simple_term: Parsec[
     return term
 
 
-def _make_level_parser(ops: List[Operator], term: Parsec[T]) -> Parsec[T]:
+def _make_level_parser(ops: List[Operator[T]], term: Parsec[T]) -> Parsec[T]:
     infix_r: List[Parsec[Callable[[T, T], T]]] = []
     infix_l: List[Parsec[Callable[[T, T], T]]] = []
     infix_n: List[Parsec[Callable[[T, T], T]]] = []

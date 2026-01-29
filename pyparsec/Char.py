@@ -32,13 +32,13 @@ def satisfy(f: Callable[[str], bool]) -> Parsec[str]:
 
 
 # 1. oneOf: Parses any character in the provided list
-def one_of(cs: List[str]) -> Parsec[str]:
+def one_of(cs: Sequence[str]) -> Parsec[str]:
     """Succeeds if the current character is in cs. Returns the parsed character."""
     return satisfy(lambda c: c in cs).label(f"one of {''.join(cs)}")
 
 
 # 2. noneOf: Parses any character not in the provided list
-def none_of(cs: List[str]) -> Parsec[str]:
+def none_of(cs: Sequence[str]) -> Parsec[str]:
     """Succeeds if the current character is not in cs. Returns the parsed character."""
     return satisfy(lambda c: c not in cs).label(f"none of {''.join(cs)}")
 

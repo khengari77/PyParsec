@@ -1,4 +1,4 @@
-from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union, overload
+from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union, overload, cast
 
 from .Parsec import (
     Error,
@@ -115,7 +115,9 @@ def _many_accum(
 ) -> Parsec[AccType]:
     def parse_accum(state_outer: State) -> ParseResult[AccType]:
         current_acc: AccType = (
-            empty_acc_value.copy() if hasattr(empty_acc_value, "copy") else empty_acc_value
+            cast(Any, empty_acc_value).copy() 
+            if hasattr(empty_acc_value, "copy") 
+            else empty_acc_value
         )
         accum_state: State = state_outer
         consumed_overall: bool = False
@@ -234,15 +236,15 @@ def tokens(
             # Ensure type compatibility
             if isinstance(to_match, list):
                 if isinstance(input_stream, str):
-                    target = "".join(to_match)
+                    target = "".join(cast(List[str], to_match))
                 elif isinstance(input_stream, bytes):
-                    target = bytes(to_match)
+                    target = bytes(cast(List[bytes], to_match))
 
             if input_stream.startswith(target):
                 matched = target
                 # Use optimized update_string if it's text
                 if isinstance(input_stream, str):
-                    new_pos = update_pos_string(state.pos, matched)
+                    new_pos = update_pos_string(state.pos, cast(str, matched))
                 else:
                     new_pos = next_pos_fn(state.pos, matched)
 

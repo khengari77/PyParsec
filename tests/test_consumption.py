@@ -44,6 +44,7 @@ def test_try_reverts_consumption():
     result = parser(state)
 
     assert result.value == "a"
+    assert result.state is not None
     assert result.state.input == "c"
     # Note: Depending on implementation, consumed might be True (from the successful 'a')
     # or False (if the try block completely hid it).

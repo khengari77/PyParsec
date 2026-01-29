@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, Generic, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, Callable, Generic, List, Optional, Sequence, Tuple, TypeVar, Union, cast
 
 T = TypeVar("T")  # Generic type for parser results
 U = TypeVar("U")  # Generic type for bind mapping
@@ -255,13 +255,13 @@ class Parsec(Generic[T]):
 
         return Parsec(parse)
 
-    def __or__(self, other: "Parsec[T]") -> "Parsec[T]":
-        def parse(state: State) -> ParseResult[T]:
+    def __or__(self, other: "Parsec[U]") -> "Parsec[Union[T, U]]":
+        def parse(state: State) -> ParseResult[Union[T, U]]:
             res1 = self(state)
 
             # If Ok OR Consumed Error -> res1 wins
             if isinstance(res1.reply, Ok) or res1.consumed:
-                return res1
+                return cast(ParseResult[Union[T, U]], res1)
 
             # res1 is Empty Error
             res2 = other(state)
@@ -271,7 +271,7 @@ class Parsec(Generic[T]):
                 merged_err = ParseError.merge(res1.reply.error, res2.reply.error)
                 return ParseResult.error_empty(merged_err)
 
-            return res2
+            return cast(ParseResult[Union[T, U]], res2)
 
         return Parsec(parse)
 

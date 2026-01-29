@@ -118,6 +118,7 @@ def test_string_prime_lookahead(s):
     if isinstance(res.reply, Ok):
         assert res.value == s
         assert not res.consumed  # Crucial for string_prime
+        assert res.state is not None
         assert res.state.input == s + "123"  # Input remains untouched
     else:
         # Should only fail if s is not in input
@@ -132,6 +133,7 @@ def test_string_prime_empty_string():
     assert isinstance(res.reply, Ok)
     assert res.value == ""
     assert not res.consumed
+    assert res.state is not None
     assert res.state.input == "123"  # Input unchanged
 
 
@@ -186,6 +188,7 @@ def test_tab_position():
 
     # 1. Start at 1, 1
     res = p(state)
+    assert res.state is not None
     assert res.state.pos.column == 9  # 1 + 8
 
     # 2. Start at 1, 5
@@ -194,6 +197,7 @@ def test_tab_position():
     # Next tab stop after 5 is 9.
     # Logic: new_col = old + 8 - ((old-1) % 8)
     # 5 + 8 - (4 % 8) = 5 + 8 - 4 = 9. Correct.
+    assert res2.state is not None
     assert res2.state.pos.column == 9
 
 
