@@ -1,33 +1,40 @@
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List, Callable, TypeVar, Union, Generic
-from .Parsec import Parsec
-from .Combinators import choice, chainl1, chainr1
-from .Prim import pure, fail
+from typing import Callable, Generic, List, TypeVar
 
-T = TypeVar('T')
+from .Combinators import chainl1, chainr1, choice
+from .Parsec import Parsec
+from .Prim import pure
+
+T = TypeVar("T")
+
 
 class Assoc(Enum):
     NONE = auto()
     LEFT = auto()
     RIGHT = auto()
 
+
 @dataclass
 class Operator(Generic[T]):
     pass
+
 
 @dataclass
 class Infix(Operator[T]):
     parser: Parsec[Callable[[T, T], T]]
     assoc: Assoc
 
+
 @dataclass
 class Prefix(Operator[T]):
     parser: Parsec[Callable[[T], T]]
 
+
 @dataclass
 class Postfix(Operator[T]):
     parser: Parsec[Callable[[T], T]]
+
 
 def build_expression_parser(table: List[List[Operator[T]]], simple_term: Parsec[T]) -> Parsec[T]:
     term = simple_term
@@ -35,18 +42,22 @@ def build_expression_parser(table: List[List[Operator[T]]], simple_term: Parsec[
         term = _make_level_parser(ops, term)
     return term
 
+
 def _make_level_parser(ops: List[Operator], term: Parsec[T]) -> Parsec[T]:
     infix_r: List[Parsec[Callable[[T, T], T]]] = []
     infix_l: List[Parsec[Callable[[T, T], T]]] = []
     infix_n: List[Parsec[Callable[[T, T], T]]] = []
     prefix: List[Parsec[Callable[[T], T]]] = []
     postfix: List[Parsec[Callable[[T], T]]] = []
-    
+
     for op in ops:
         if isinstance(op, Infix):
-            if op.assoc == Assoc.RIGHT: infix_r.append(op.parser)
-            elif op.assoc == Assoc.LEFT: infix_l.append(op.parser)
-            else: infix_n.append(op.parser)
+            if op.assoc == Assoc.RIGHT:
+                infix_r.append(op.parser)
+            elif op.assoc == Assoc.LEFT:
+                infix_l.append(op.parser)
+            else:
+                infix_n.append(op.parser)
         elif isinstance(op, Prefix):
             prefix.append(op.parser)
         elif isinstance(op, Postfix):
@@ -66,29 +77,27 @@ def _make_level_parser(ops: List[Operator], term: Parsec[T]) -> Parsec[T]:
 
     # Construct the term parser for this level
     # We bind: f <- pre, x <- term, g <- post, return g(f(x))
-    term_parser = pre_parser.bind(lambda f: 
-                  term.bind(lambda x: 
-                  post_parser.bind(lambda g: 
-                  pure(g(f(x))))))
+    term_parser = pre_parser.bind(
+        lambda f: term.bind(lambda x: post_parser.bind(lambda g: pure(g(f(x)))))
+    )
 
     # 2. Handle Infix
     result_parser = term_parser
-    
+
     if infix_l:
         op_l: Parsec[Callable[[T, T], T]] = choice(infix_l)
         result_parser = chainl1(result_parser, op_l)
-        
+
     if infix_r:
         op_r: Parsec[Callable[[T, T], T]] = choice(infix_r)
         result_parser = chainr1(result_parser, op_r)
-        
+
     if infix_n:
         op_n = choice(infix_n)
+
         def non_assoc_logic(x: T) -> Parsec[T]:
-            return op_n.bind(lambda f: 
-                   result_parser.bind(lambda y: 
-                   pure(f(x, y)))) | pure(x)
-                   
+            return op_n.bind(lambda f: result_parser.bind(lambda y: pure(f(x, y)))) | pure(x)
+
         result_parser = result_parser.bind(non_assoc_logic)
 
     return result_parser

@@ -1,11 +1,15 @@
-from hypothesis import given, strategies as st
-from pyparsec.Parsec import SourcePos, update_pos_string, update_pos_char
+from hypothesis import given
+from hypothesis import strategies as st
+
+from pyparsec.Parsec import SourcePos, update_pos_char, update_pos_string
+
 
 def slow_reference_update(pos, text):
     curr = pos
     for char in text:
         curr = update_pos_char(curr, char)
     return curr
+
 
 @given(st.text())
 def test_fast_pos_update_matches_reference(text):

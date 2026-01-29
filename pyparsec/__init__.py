@@ -1,29 +1,59 @@
 # Core
-from .Parsec import Parsec, State, ParseError, SourcePos
-from .Prim import run_parser, pure, fail, try_parse, lazy, token, tokens, many, many1, skip_many
-
 # Characters
 from .Char import (
-    char, string, digit, hex_digit, oct_digit, 
-    letter, alpha_num, upper, lower,
-    any_char, one_of, none_of, 
-    space, spaces, newline, tab, end_of_line
+    alpha_num,
+    any_char,
+    char,
+    digit,
+    end_of_line,
+    hex_digit,
+    letter,
+    lower,
+    newline,
+    none_of,
+    oct_digit,
+    one_of,
+    space,
+    spaces,
+    string,
+    tab,
+    upper,
 )
 
 # Combinators
 from .Combinators import (
-    choice, count, between, option, option_maybe, optional,
-    skip_many1, sep_by, sep_by1, end_by, end_by1, 
-    sep_end_by, sep_end_by1, chainl, chainl1, chainr, chainr1, 
-    eof, any_token, not_followed_by, many_till,
-    parser_trace, parser_traced
+    any_token,
+    between,
+    chainl,
+    chainl1,
+    chainr,
+    chainr1,
+    choice,
+    count,
+    end_by,
+    end_by1,
+    eof,
+    many_till,
+    not_followed_by,
+    option,
+    option_maybe,
+    optional,
+    parser_trace,
+    parser_traced,
+    sep_by,
+    sep_by1,
+    sep_end_by,
+    sep_end_by1,
+    skip_many1,
 )
 
-# Lexer Generation (Token)
-from .Token import TokenParser, LanguageDef
+# Expression Parsing
+from .Expr import Assoc, Infix, Operator, Postfix, Prefix, build_expression_parser
 
 # Standard Language Definitions
-from .Language import empty_def, java_style, python_style, haskell_style
+from .Language import empty_def, haskell_style, java_style, python_style
+from .Parsec import Parsec, ParseError, SourcePos, State
+from .Prim import fail, lazy, many, many1, pure, run_parser, skip_many, token, tokens, try_parse
 
-# Expression Parsing
-from .Expr import build_expression_parser, Operator, Infix, Prefix, Postfix, Assoc
+# Lexer Generation (Token)
+from .Token import LanguageDef, TokenParser
