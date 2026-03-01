@@ -1,4 +1,5 @@
-from typing import Callable, List, Optional, Sequence
+"""Character-level parsers for matching individual characters and strings."""
+from typing import Callable, Optional, Sequence
 
 from .Parsec import (
     Parsec,

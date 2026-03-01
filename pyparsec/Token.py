@@ -1,3 +1,4 @@
+"""Lexer generator that builds token parsers from a language definition."""
 from dataclasses import dataclass, field
 from typing import Any, List, TypeVar
 
@@ -53,6 +54,12 @@ class TokenParser:
     """
 
     def __init__(self, lang: LanguageDef):
+        if bool(lang.comment_start) != bool(lang.comment_end):
+            raise ValueError(
+                "LanguageDef: comment_start and comment_end must both be set or both be empty. "
+                f"Got comment_start={lang.comment_start!r}, comment_end={lang.comment_end!r}"
+            )
+
         self.lang = lang
 
         # --- Whitespace & Comments ---

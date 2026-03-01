@@ -1,10 +1,11 @@
+"""Core types and data structures for the parser combinator library."""
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Generic, List, Optional, Sequence, Tuple, TypeVar, Union, cast
 
 T = TypeVar("T")  # Generic type for parser results
 U = TypeVar("U")  # Generic type for bind mapping
-I = TypeVar("I", bound=Sequence)  # Generic type for input stream
+Inp = TypeVar("Inp", bound=Sequence)  # Generic type for input stream
 
 
 @dataclass(frozen=True)
@@ -67,18 +68,18 @@ def initial_pos(name: str) -> SourcePos:
 
 
 @dataclass
-class State(Generic[I]):
+class State(Generic[Inp]):
     """Parser state: input stream (Sequence), position, and user state."""
 
-    input: I
+    input: Inp
     pos: SourcePos
     user: Any
     index: int = 0
 
     @property
-    def remaining(self) -> I:
+    def remaining(self) -> Inp:
         """Return the unconsumed portion of the input from the current index."""
-        return cast(I, self.input[self.index:])
+        return cast(Inp, self.input[self.index:])
 
 
 class MessageType(Enum):
@@ -330,6 +331,8 @@ class Parsec(Generic[T]):
         return self.bind(lambda x: _pure(f(x)))
 
 
+# _pure exists to avoid a circular import with Prim.pure(); Parsec.py cannot
+# import from Prim, so it keeps its own minimal "pure" for internal use.
 def _pure(value: T) -> Parsec[T]:
     def parse(state: State) -> ParseResult[T]:
         return ParseResult.ok_empty(value, state, ParseError.new_unknown(state.pos))

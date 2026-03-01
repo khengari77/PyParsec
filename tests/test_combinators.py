@@ -4,7 +4,7 @@ from hypothesis import strategies as st
 from pyparsec.Char import any_char, char, digit, string
 from pyparsec.Combinators import *
 from pyparsec.Parsec import Ok, State, initial_pos
-from pyparsec.Prim import run_parser
+from pyparsec.Prim import many1, run_parser
 
 
 def run(parser, input_str):
@@ -204,6 +204,95 @@ def test_any_token_with_falsy_values(ints):
     res = p(state)
     assert isinstance(res.reply, Ok)
     assert res.value == ints[0]
+
+
+def test_optional_success():
+    """optional() returns None when inner parser succeeds."""
+    p = optional(char("a"))
+    res, err = run(p, "a")
+    assert res is None
+    assert err is None
+
+
+def test_optional_failure():
+    """optional() returns None when inner parser fails without consuming."""
+    p = optional(char("a"))
+    res, err = run(p, "b")
+    assert res is None
+    assert err is None
+
+
+def test_skip_many1_success():
+    """skip_many1() succeeds when at least one match is found."""
+    p = skip_many1(char("a"))
+    res, err = run(p, "aaab")
+    assert res is None
+    assert err is None
+
+
+def test_skip_many1_failure():
+    """skip_many1() fails when no match is found."""
+    p = skip_many1(char("a"))
+    res, err = run(p, "b")
+    assert res is None
+    assert err is not None
+
+
+def test_chainl_default():
+    """chainl() falls back to default value when no match."""
+    num = digit().map(int)
+    op = char("+").map(lambda _: lambda x, y: x + y)
+    p = chainl(num, op, 0)
+    res, err = run(p, "")
+    assert res == 0
+    assert err is None
+
+
+def test_chainr_default():
+    """chainr() falls back to default value when no match."""
+    num = digit().map(int)
+    op = char("+").map(lambda _: lambda x, y: x + y)
+    p = chainr(num, op, 0)
+    res, err = run(p, "")
+    assert res == 0
+    assert err is None
+
+
+def test_end_by1_success():
+    """end_by1() requires at least one occurrence followed by separator."""
+    p = end_by1(char("a"), char(";"))
+    res, err = run(p, "a;a;")
+    assert res == ["a", "a"]
+    assert err is None
+
+
+def test_end_by1_failure():
+    """end_by1() fails on empty input."""
+    p = end_by1(char("a"), char(";"))
+    res, err = run(p, "")
+    assert res is None
+    assert err is not None
+
+
+def test_sep_end_by1_success():
+    """sep_end_by1() parses separated and optionally ended items."""
+    p = sep_end_by1(char("a"), char(";"))
+    # Without trailing separator
+    res, err = run(p, "a;a")
+    assert res == ["a", "a"]
+    assert err is None
+    # With trailing separator
+    res, err = run(p, "a;a;")
+    assert res == ["a", "a"]
+    assert err is None
+
+
+def test_sep_end_by1_failure():
+    """sep_end_by1() fails on empty input."""
+    p = sep_end_by1(char("a"), char(";"))
+    res, err = run(p, "")
+    assert res is None
+    assert err is not None
 
 
 def test_any_token_falsy_cases_explicit():

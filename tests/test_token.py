@@ -4,8 +4,9 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from pyparsec.Language import empty_def, java_style, python_style
-from pyparsec.Prim import run_parser
+from pyparsec.Char import digit
+from pyparsec.Language import empty_def, haskell_style, java_style, python_style
+from pyparsec.Prim import many1, run_parser
 from pyparsec.Token import TokenParser
 
 
@@ -264,3 +265,62 @@ def test_prop_nested_with_content(outer_content, nesting_levels):
     res, err = run(p, input_str)
     assert res == 42
     assert err is None
+
+
+# --- Delimiter Parsing ---
+
+
+def test_parens():
+    lexer = TokenParser(empty_def)
+    p = lexer.parens(lexer.integer)
+    assert run(p, "(42)")[0] == 42
+    assert run(p, "( 42 )")[0] == 42
+    assert run(p, "42")[0] is None
+
+
+def test_brackets():
+    lexer = TokenParser(empty_def)
+    p = lexer.brackets(lexer.integer)
+    assert run(p, "[42]")[0] == 42
+    assert run(p, "[ 42 ]")[0] == 42
+    assert run(p, "42")[0] is None
+
+
+def test_braces():
+    lexer = TokenParser(empty_def)
+    p = lexer.braces(lexer.integer)
+    assert run(p, "{42}")[0] == 42
+    assert run(p, "{ 42 }")[0] == 42
+    assert run(p, "42")[0] is None
+
+
+# --- Symbol ---
+
+
+def test_symbol():
+    lexer = TokenParser(empty_def)
+    p = lexer.symbol("hello")
+    assert run(p, "hello")[0] == "hello"
+    assert run(p, "hello   ")[0] == "hello"
+    assert run(p, "world")[0] is None
+
+
+# --- haskell_style language definition ---
+
+
+def test_haskell_style_block_comments():
+    lexer = TokenParser(haskell_style)
+    p = lexer.white_space >> lexer.integer
+    assert run(p, "{- comment -} 42")[0] == 42
+
+
+def test_haskell_style_line_comments():
+    lexer = TokenParser(haskell_style)
+    p = lexer.white_space >> lexer.integer
+    assert run(p, "-- comment\n42")[0] == 42
+
+
+def test_haskell_style_nested_comments():
+    lexer = TokenParser(haskell_style)
+    p = lexer.white_space >> lexer.integer
+    assert run(p, "{- outer {- inner -} outer -} 42")[0] == 42

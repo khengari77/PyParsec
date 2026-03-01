@@ -1,3 +1,4 @@
+"""Expression parser builder with support for infix, prefix, and postfix operators."""
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable, Generic, List, TypeVar

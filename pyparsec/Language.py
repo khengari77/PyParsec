@@ -1,3 +1,4 @@
+"""Pre-built language definitions and lexers for common programming languages."""
 from dataclasses import replace
 
 from .Char import alpha_num, char, letter, one_of

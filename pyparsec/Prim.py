@@ -1,4 +1,5 @@
-from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union, overload, cast
+"""Primitive parsers and the core run_parser entry point."""
+from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union, cast, overload
 
 from .Parsec import (
     Error,
@@ -113,8 +114,8 @@ def _many_accum(
 ) -> Parsec[AccType]:
     def parse_accum(state_outer: State) -> ParseResult[AccType]:
         current_acc: AccType = (
-            cast(Any, empty_acc_value).copy() 
-            if hasattr(empty_acc_value, "copy") 
+            cast(Any, empty_acc_value).copy()
+            if hasattr(empty_acc_value, "copy")
             else empty_acc_value
         )
         accum_state: State = state_outer

@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +28,10 @@ jobs:
       - name: Sync dependencies (uv)
         run: |
           uv sync --group dev
+
+      - name: Lint with ruff
+        run: |
+          uv run ruff check pyparsec/
 
       - name: Run tests
         run: |
@@ -54,5 +58,9 @@ jobs:
 
       - name: Build sdist/wheel
         run: |
-          uv pip install build
+          uv pip install build twine
           uv run python -m build
+
+      - name: Validate package metadata
+        run: |
+          uv run twine check dist/*

@@ -1,3 +1,4 @@
+"""Higher-order parser combinators for sequencing, repetition, and choice."""
 from typing import Any, Callable, List, Optional, TypeVar, Union, cast
 
 from .Parsec import Error, MessageType, Ok, Parsec, ParseError, ParseResult, State
@@ -41,6 +42,7 @@ def choice(parsers: List[Parsec[T]]) -> Parsec[T]:
 
 
 def count(n: int, p: Parsec[T]) -> Parsec[List[T]]:
+    """Parses p exactly n times, returning a list of results."""
     if n <= 0:
         return pure([])
 
@@ -50,7 +52,7 @@ def count(n: int, p: Parsec[T]) -> Parsec[List[T]]:
         consumed_overall = False
         last_error = ParseError.new_unknown(state_initial.pos)
 
-        for i in range(n):
+        for _i in range(n):
             res_p = p(current_state)
             consumed_overall = consumed_overall or res_p.consumed
 
@@ -79,22 +81,27 @@ def count(n: int, p: Parsec[T]) -> Parsec[List[T]]:
 
 
 def between(open: Parsec[Any], close: Parsec[Any], p: Parsec[T]) -> Parsec[T]:
+    """Parses open, then p, then close, returning the value of p."""
     return open >> (lambda _: p.bind(lambda x: close >> (lambda _: pure(x))))
 
 
 def option(x: T, p: Parsec[T]) -> Parsec[T]:
+    """Tries parser p; returns x as the default if p fails without consuming."""
     return p | pure(x)
 
 
 def option_maybe(p: Parsec[T]) -> Parsec[Optional[T]]:
+    """Tries parser p; returns None if p fails without consuming."""
     return p.map(lambda x: cast(Optional[T], x)) | pure(cast(Optional[T], None))
 
 
 def optional(p: Parsec[T]) -> Parsec[None]:
+    """Tries parser p, discarding its result. Always succeeds with None."""
     return (p >> (lambda _: pure(None))) | pure(None)
 
 
 def skip_many1(p: Parsec[Any]) -> Parsec[None]:
+    """Skips one or more occurrences of p, failing if p doesn't match at least once."""
     return p >> (lambda _: many(p) >> (lambda _: pure(None)))
 
 
@@ -311,6 +318,7 @@ def _scan_op_chain(
 
 
 def any_token() -> Parsec[str]:
+    """Parses any single token from the input stream."""
     return token(lambda t: str(t), lambda t: t)
 
 
