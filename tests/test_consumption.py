@@ -45,7 +45,7 @@ def test_try_reverts_consumption():
 
     assert result.value == "a"
     assert result.state is not None
-    assert result.state.input == "c"
+    assert result.state.remaining == "c"
     # Note: Depending on implementation, consumed might be True (from the successful 'a')
     # or False (if the try block completely hid it).
     # Standard Parsec: The successful branch consumes, so result.consumed is True.

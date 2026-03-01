@@ -240,7 +240,7 @@ class TokenParser:
                             curr_state = res_start.reply.state
                             continue
 
-                    if not curr_state.input:
+                    if curr_state.index >= len(curr_state.input):
                         return ParseResult.error_consumed(
                             ParseError.new_message(
                                 curr_state.pos, MessageType.UNEXPECT, "end of input in comment"

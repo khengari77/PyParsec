@@ -119,7 +119,7 @@ def test_string_prime_lookahead(s):
         assert res.value == s
         assert not res.consumed  # Crucial for string_prime
         assert res.state is not None
-        assert res.state.input == s + "123"  # Input remains untouched
+        assert res.state.remaining == s + "123"  # Input remains untouched
     else:
         # Should only fail if s is not in input
         pass
@@ -134,7 +134,7 @@ def test_string_prime_empty_string():
     assert res.value == ""
     assert not res.consumed
     assert res.state is not None
-    assert res.state.input == "123"  # Input unchanged
+    assert res.state.remaining == "123"  # Input unchanged
 
 
 def test_string_prime_failure():

@@ -73,6 +73,12 @@ class State(Generic[I]):
     input: I
     pos: SourcePos
     user: Any
+    index: int = 0
+
+    @property
+    def remaining(self) -> I:
+        """Return the unconsumed portion of the input from the current index."""
+        return cast(I, self.input[self.index:])
 
 
 class MessageType(Enum):

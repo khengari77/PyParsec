@@ -51,12 +51,12 @@ def token(
     """
 
     def parse(state: State) -> ParseResult[T]:
-        if not state.input:  # Handles empty str, bytes, or list
+        if state.index >= len(state.input):
             return ParseResult.error_empty(
                 ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, "")
             )
 
-        tok_val = state.input[0]
+        tok_val = state.input[state.index]
         result_val = test_tok(tok_val)
 
         if result_val is None:
@@ -68,11 +68,9 @@ def token(
         if next_pos:
             new_pos_val = next_pos(state.pos, tok_val)
         else:
-            # Fallback for text streams
-            # We cast to str to be safe, assuming S is char-like if next_pos wasn't provided
             new_pos_val = update_pos_char(state.pos, str(tok_val))
 
-        new_state = State(state.input[1:], new_pos_val, state.user)
+        new_state = State(state.input, new_pos_val, state.user, state.index + 1)
         return ParseResult.ok_consumed(result_val, new_state, ParseError.new_unknown(new_pos_val))
 
     return Parsec(parse)
@@ -201,7 +199,7 @@ def run_parser(
     source_name: str = "",
 ) -> Tuple[Optional[T], Optional[ParseError]]:
     """Helper to run a parser and extract value/error."""
-    initial_state = State(input_data, SourcePos(1, 1, source_name), user_state)
+    initial_state = State(input_data, SourcePos(1, 1, source_name), user_state, 0)
     res = parser(initial_state)
 
     if isinstance(res.reply, Ok):
@@ -229,6 +227,8 @@ def tokens(
 
     def parse(state: State) -> ParseResult[Sequence[S]]:
         input_stream = state.input
+        idx = state.index
+        len_target = len(to_match)
 
         # 1. Text Optimization (str or bytes)
         if isinstance(input_stream, (str, bytes)):
@@ -240,7 +240,7 @@ def tokens(
                 elif isinstance(input_stream, bytes):
                     target = bytes(cast(List[bytes], to_match))
 
-            if input_stream.startswith(target):
+            if input_stream.startswith(target, idx):
                 matched = target
                 # Use optimized update_string if it's text
                 if isinstance(input_stream, str):
@@ -248,25 +248,23 @@ def tokens(
                 else:
                     new_pos = next_pos_fn(state.pos, matched)
 
-                new_state = State(input_stream[len(matched) :], new_pos, state.user)
+                new_state = State(input_stream, new_pos, state.user, idx + len(matched))
                 return ParseResult.ok_consumed(matched, new_state, ParseError.new_unknown(new_pos))
 
         # 2. Generic Sequence (List comparison)
         else:
-            len_target = len(to_match)
-            if len(input_stream) >= len_target:
-                potential_match = input_stream[:len_target]
+            if len(input_stream) - idx >= len_target:
+                potential_match = input_stream[idx : idx + len_target]
                 if potential_match == to_match:
                     new_pos = next_pos_fn(state.pos, potential_match)
-                    new_state = State(input_stream[len_target:], new_pos, state.user)
+                    new_state = State(input_stream, new_pos, state.user, idx + len_target)
                     return ParseResult.ok_consumed(
                         potential_match, new_state, ParseError.new_unknown(new_pos)
                     )
 
         # 3. Failure
         expected_msg = show_tokens_fn(to_match)
-        len_to_match = len(to_match)
-        actual_found = input_stream[:len_to_match]
+        actual_found = input_stream[idx : idx + len_target]
         actual_msg_text = show_tokens_fn(actual_found) if len(actual_found) > 0 else ""
 
         err = ParseError(

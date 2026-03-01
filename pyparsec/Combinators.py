@@ -372,7 +372,7 @@ def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[List[T]]:
 
 def parser_trace(label_str: str) -> Parsec[None]:
     def parse(state: State) -> ParseResult[None]:
-        input_preview = str(state.input)[:30]
+        input_preview = str(state.input[state.index:])[:30]
         print(f'{label_str}: "{input_preview}" at {state.pos}')
         return ParseResult.ok_empty(None, state, ParseError.new_unknown(state.pos))
 
