@@ -1,4 +1,15 @@
-"""Primitive parsers and the core run_parser entry point."""
+"""Primitive parsers and the core ``run_parser`` entry point.
+
+This module provides the building blocks for all other parsers:
+
+- :func:`pure` / :func:`fail` -- trivial success and failure
+- :func:`token` -- match a single input element
+- :func:`try_parse` / :func:`look_ahead` -- backtracking and lookahead
+- :func:`many` / :func:`many1` / :func:`skip_many` -- repetition
+- :func:`tokens` / :func:`tokens_prime` -- multi-token matching
+- :func:`run_parser` / :func:`parse_test` -- running parsers on input
+- :func:`lazy` -- deferred parser construction for recursion
+"""
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union, cast, overload
 
 from .Parsec import (
@@ -23,7 +34,21 @@ AccType = TypeVar("AccType")  # Accumulator type for many
 
 
 def pure(value: T) -> Parsec[T]:
-    """Return a parser that succeeds with a value without consuming input."""
+    """Return a parser that succeeds with *value* without consuming input.
+
+    Args:
+        value: The value to inject into the parser pipeline.
+
+    Returns:
+        A :class:`~pyparsec.Parsec.Parsec` that always succeeds with *value*.
+
+    Example::
+
+        >>> from pyparsec import run_parser
+        >>> from pyparsec.Prim import pure
+        >>> run_parser(pure(42), "")[0]
+        42
+    """
 
     def parse(state: State) -> ParseResult[T]:
         return ParseResult.ok_empty(value, state, ParseError.new_unknown(state.pos))
@@ -32,7 +57,22 @@ def pure(value: T) -> Parsec[T]:
 
 
 def fail(msg: str) -> Parsec[Any]:
-    """A parser that always fails with a message."""
+    """Return a parser that always fails with the given message.
+
+    Args:
+        msg: The error message to report.
+
+    Returns:
+        A :class:`~pyparsec.Parsec.Parsec` that always fails without consuming input.
+
+    Example::
+
+        >>> from pyparsec import run_parser
+        >>> from pyparsec.Prim import fail
+        >>> _, err = run_parser(fail("oops"), "abc")
+        >>> "oops" in str(err)
+        True
+    """
 
     def parse(state: State) -> ParseResult[Any]:
         return ParseResult.error_empty(ParseError.new_message(state.pos, MessageType.MESSAGE, msg))
@@ -45,10 +85,28 @@ def token(
     test_tok: Callable[[S], Optional[T]],
     next_pos: Optional[Callable[[SourcePos, S], SourcePos]] = None,
 ) -> Parsec[T]:
-    """
-    Parse a single token.
-    next_pos is optional: if provided, it calculates new position from the token.
-    If not provided, it falls back to standard text logic.
+    """Parse a single token from the input stream.
+
+    This is the most fundamental parser. It examines the next input element
+    and either accepts or rejects it.
+
+    Args:
+        show_tok: A function that converts a token to a display string for errors.
+        test_tok: A function that returns the result value on match, or ``None`` to
+            reject the token.
+        next_pos: Optional function to compute the new position from a token.
+            Falls back to :func:`~pyparsec.Parsec.update_pos_char` if not provided.
+
+    Returns:
+        A parser that consumes one token on success.
+
+    Example::
+
+        >>> from pyparsec import run_parser
+        >>> from pyparsec.Prim import token
+        >>> digit = token(str, lambda c: int(c) if c.isdigit() else None)
+        >>> run_parser(digit, "7abc")[0]
+        7
     """
 
     def parse(state: State) -> ParseResult[T]:
@@ -78,7 +136,25 @@ def token(
 
 
 def try_parse(parser: Parsec[T]) -> Parsec[T]:
-    """Try a parser, converting a consumed error into an empty error (backtracking)."""
+    """Try a parser, converting a consumed error into an empty error (backtracking).
+
+    If *parser* fails after consuming input, ``try_parse`` resets the consumed
+    flag so that alternatives (via ``|``) can still be tried.
+
+    Args:
+        parser: The parser to attempt.
+
+    Returns:
+        A backtracking version of *parser*.
+
+    Example::
+
+        >>> from pyparsec import run_parser, string
+        >>> from pyparsec.Prim import try_parse
+        >>> p = try_parse(string("abc")) | string("abd")
+        >>> run_parser(p, "abd")[0]
+        'abd'
+    """
 
     def parse(state: State) -> ParseResult[T]:
         res = parser(state)
@@ -94,7 +170,26 @@ def try_parse(parser: Parsec[T]) -> Parsec[T]:
 
 
 def look_ahead(parser: Parsec[T]) -> Parsec[T]:
-    """Parses p, returns its result, but rolls back state. Consumes nothing."""
+    """Run *parser* and return its result, but do not consume any input.
+
+    If *parser* succeeds, the state is rolled back. If it fails, the error
+    is propagated as-is.
+
+    Args:
+        parser: The parser to preview.
+
+    Returns:
+        A non-consuming version of *parser*.
+
+    Example::
+
+        >>> from pyparsec import run_parser, char
+        >>> from pyparsec.Prim import look_ahead
+        >>> p = look_ahead(char('a'))
+        >>> val, _ = run_parser(p, "abc")
+        >>> val
+        'a'
+    """
 
     def parse(state: State) -> ParseResult[T]:
         res = parser(state)
@@ -155,6 +250,24 @@ def _many_accum(
 
 
 def many(p: Parsec[T]) -> Parsec[List[T]]:
+    """Apply *p* zero or more times and collect the results into a list.
+
+    Stops when *p* fails without consuming input.
+
+    Args:
+        p: The parser to repeat.
+
+    Returns:
+        A parser yielding a (possibly empty) list of results.
+
+    Example::
+
+        >>> from pyparsec import run_parser, char
+        >>> from pyparsec.Prim import many
+        >>> run_parser(many(char('a')), "aaab")[0]
+        ['a', 'a', 'a']
+    """
+
     def _acc(item: T, lst: List[T]) -> List[T]:
         lst.append(item)
         return lst
@@ -163,6 +276,24 @@ def many(p: Parsec[T]) -> Parsec[List[T]]:
 
 
 def many1(p: Parsec[T]) -> Parsec[List[T]]:
+    """Apply *p* one or more times and collect the results into a list.
+
+    Fails if *p* does not succeed at least once.
+
+    Args:
+        p: The parser to repeat.
+
+    Returns:
+        A parser yielding a non-empty list of results.
+
+    Example::
+
+        >>> from pyparsec import run_parser, char
+        >>> from pyparsec.Prim import many1
+        >>> run_parser(many1(char('a')), "aab")[0]
+        ['a', 'a']
+    """
+
     def _acc(item: T, lst: List[T]) -> List[T]:
         lst.append(item)
         return lst
@@ -171,7 +302,22 @@ def many1(p: Parsec[T]) -> Parsec[List[T]]:
 
 
 def skip_many(p: Parsec[Any]) -> Parsec[None]:
-    """Skips zero or more occurrences of `p`."""
+    """Apply *p* zero or more times, discarding all results.
+
+    Args:
+        p: The parser to repeat and discard.
+
+    Returns:
+        A parser that always yields ``None``.
+
+    Example::
+
+        >>> from pyparsec import run_parser
+        >>> from pyparsec.Char import space
+        >>> from pyparsec.Prim import skip_many
+        >>> run_parser(skip_many(space()), "   hello")[0] is None
+        True
+    """
     return _many_accum(lambda _, __: None, p, None)
 
 
@@ -199,7 +345,27 @@ def run_parser(
     user_state: Any = None,
     source_name: str = "",
 ) -> Tuple[Optional[T], Optional[ParseError]]:
-    """Helper to run a parser and extract value/error."""
+    """Run *parser* on *input_data* and return ``(value, error)``.
+
+    Exactly one of the two tuple elements will be ``None``.
+
+    Args:
+        parser: The parser to execute.
+        input_data: The input string or sequence to parse.
+        user_state: Optional user-defined state threaded through parsing.
+        source_name: Optional source name for error messages (e.g. a filename).
+
+    Returns:
+        A tuple ``(value, None)`` on success, or ``(None, error)`` on failure.
+
+    Example::
+
+        >>> from pyparsec import run_parser, char
+        >>> run_parser(char('a'), "abc")
+        ('a', None)
+        >>> run_parser(char('a'), "xyz")
+        (None, ...)
+    """
     initial_state = State(input_data, SourcePos(1, 1, source_name), user_state, 0)
     res = parser(initial_state)
 
@@ -210,6 +376,21 @@ def run_parser(
 
 
 def parse_test(parser: Parsec[T], input_data: Union[str, Sequence[Any]]) -> None:
+    """Run *parser* on *input_data* and print the result or error to stdout.
+
+    A convenience function for interactive testing and REPL use.
+
+    Args:
+        parser: The parser to execute.
+        input_data: The input string or sequence to parse.
+
+    Example::
+
+        >>> from pyparsec.Prim import parse_test
+        >>> from pyparsec.Char import char
+        >>> parse_test(char('a'), "abc")
+        a
+    """
     val, err = run_parser(parser, input_data)
     if err:
         print(err)
@@ -222,8 +403,18 @@ def tokens(
     next_pos_fn: Callable[[SourcePos, Sequence[S]], SourcePos],
     to_match: Sequence[S],
 ) -> Parsec[Sequence[S]]:
-    """
-    Polymorphic tokens parser.
+    """Parse a specific sequence of tokens from the input.
+
+    This is the multi-token counterpart of :func:`token`. It matches an
+    exact sequence and consumes it atomically.
+
+    Args:
+        show_tokens_fn: A function to render the expected tokens as a string for errors.
+        next_pos_fn: A function to compute the new position after matching.
+        to_match: The sequence of tokens to match.
+
+    Returns:
+        A parser that matches *to_match* exactly and returns it.
     """
 
     def parse(state: State) -> ParseResult[Sequence[S]]:
@@ -285,14 +476,44 @@ def tokens_prime(
     _next_pos_fn: Callable,  # Unused for prime (no consumption)
     to_match: Sequence[S],
 ) -> Parsec[Sequence[S]]:
-    """Matches tokens like 'string', but consumes nothing on success (lookahead)."""
+    """Match a token sequence without consuming input on success (lookahead).
+
+    Like :func:`tokens`, but wraps the match in :func:`look_ahead` so the
+    input position is not advanced on success.
+
+    Args:
+        show_tokens_fn: A function to render expected tokens for error messages.
+        _next_pos_fn: Position update function (passed through but unused on success).
+        to_match: The sequence of tokens to match.
+
+    Returns:
+        A non-consuming parser that matches *to_match*.
+    """
     # This is effectively look_ahead(tokens(...)) but optimized to not calc new pos
     p = tokens(show_tokens_fn, _next_pos_fn, to_match)
     return look_ahead(p)
 
 
 def lazy(parser_producer: Callable[[], Parsec[T]]) -> Parsec[T]:
-    """Lazy evaluation for recursive parsers."""
+    """Defer parser construction for recursive grammars.
+
+    Calls *parser_producer* on first use and memoizes the result, breaking
+    circular references that would otherwise cause infinite recursion.
+
+    Args:
+        parser_producer: A zero-argument callable that returns a :class:`Parsec`.
+
+    Returns:
+        A parser that lazily delegates to the produced parser.
+
+    Example::
+
+        >>> from pyparsec import run_parser, char
+        >>> from pyparsec.Prim import lazy, pure
+        >>> p = lazy(lambda: char('a'))
+        >>> run_parser(p, "a")[0]
+        'a'
+    """
     memoized_parser: Optional[Parsec[T]] = None
 
     def parse(state: State) -> ParseResult[T]:

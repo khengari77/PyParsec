@@ -1,4 +1,9 @@
-"""Lexer generator that builds token parsers from a language definition."""
+"""Lexer generator that builds token parsers from a language definition.
+
+Use :class:`LanguageDef` to describe your language's syntax (comments,
+identifiers, operators, reserved words) and pass it to :class:`TokenParser`
+to get a full set of lexeme-level parsers.
+"""
 from dataclasses import dataclass, field
 from typing import Any, List, TypeVar
 
@@ -31,14 +36,32 @@ T = TypeVar("T")
 
 @dataclass
 class LanguageDef:
-    """
-    Defines the syntax rules for a language.
+    """Define the syntax rules for a language's lexer.
+
+    Attributes:
+        comment_start: Opening string for block comments (e.g. ``"/*"``).
+            Must be paired with *comment_end*.
+        comment_end: Closing string for block comments (e.g. ``"*/"``).
+        comment_line: Opening string for line comments (e.g. ``"//"``).
+        nested_comments: Whether block comments can nest.
+        ident_start: Parser for the first character of an identifier.
+        ident_letter: Parser for subsequent characters of an identifier.
+        op_start: Parser for the first character of an operator.
+        op_letter: Parser for subsequent characters of an operator.
+        reserved_names: List of reserved identifier names.
+        reserved_op_names: List of reserved operator names.
+        case_sensitive: Whether identifiers are case-sensitive.
+
+    Example::
+
+        >>> from pyparsec.Token import LanguageDef
+        >>> lang = LanguageDef(comment_line="//")
     """
 
-    comment_start: str = ""  # e.g. "/*"
-    comment_end: str = ""  # e.g. "*/"
-    comment_line: str = ""  # e.g. "//"
-    nested_comments: bool = True  # Allow /* /* nested */ */
+    comment_start: str = ""
+    comment_end: str = ""
+    comment_line: str = ""
+    nested_comments: bool = True
     ident_start: Parsec[str] = satisfy(lambda c: c.isalpha() or c == "_")
     ident_letter: Parsec[str] = satisfy(lambda c: c.isalnum() or c == "_")
     op_start: Parsec[str] = one_of(list(":!#$%&*+./<=>?@\\^|-~"))
@@ -49,11 +72,47 @@ class LanguageDef:
 
 
 class TokenParser:
-    """
-    A helper that generates high-level parsers (lexemes) for a specific LanguageDef.
+    """Build high-level lexeme parsers from a :class:`LanguageDef`.
+
+    All parsers produced by this class automatically skip trailing whitespace
+    (including comments as defined by the language).
+
+    Attributes:
+        lang: The :class:`LanguageDef` this token parser was built from.
+        white_space: Parser that skips whitespace and comments.
+        semi: Parser for a semicolon lexeme.
+        comma: Parser for a comma lexeme.
+        colon: Parser for a colon lexeme.
+        dot: Parser for a dot lexeme.
+        decimal: Parser for a decimal integer.
+        hexadecimal: Parser for a hexadecimal integer (after ``0x``/``0X``).
+        octal: Parser for an octal integer (after ``0o``/``0O``).
+        natural: Parser for a natural number (decimal, hex, or octal).
+        integer: Parser for a signed or unsigned integer.
+        float: Parser for a floating-point number.
+        char_literal: Parser for a single-quoted character literal.
+        string_literal: Parser for a double-quoted string literal.
+        identifier: Parser for a non-reserved identifier.
+        operator: Parser for a non-reserved operator.
+
+    Example::
+
+        >>> from pyparsec import run_parser
+        >>> from pyparsec.Token import LanguageDef, TokenParser
+        >>> tp = TokenParser(LanguageDef())
+        >>> run_parser(tp.integer, "42")[0]
+        42
     """
 
     def __init__(self, lang: LanguageDef):
+        """Create a token parser from the given language definition.
+
+        Args:
+            lang: The :class:`LanguageDef` describing the language syntax.
+
+        Raises:
+            ValueError: If only one of *comment_start*/*comment_end* is set.
+        """
         if bool(lang.comment_start) != bool(lang.comment_end):
             raise ValueError(
                 "LanguageDef: comment_start and comment_end must both be set or both be empty. "
@@ -164,41 +223,230 @@ class TokenParser:
     # --- Methods (Previously Lambdas) ---
 
     def lexeme(self, p: Parsec[T]) -> Parsec[T]:
-        """Parses p, then skips trailing whitespace."""
+        """Parse *p* then skip trailing whitespace and comments.
+
+        Args:
+            p: The parser whose result is kept.
+
+        Returns:
+            A parser that yields *p*'s result after consuming trailing whitespace.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> from pyparsec.Char import digit
+            >>> run_parser(tp.lexeme(digit()), "5  ")[0]
+            '5'
+        """
         return p < self.white_space
 
     def symbol(self, name: str) -> Parsec[str]:
-        """Parses a string symbol, then skips trailing whitespace."""
+        """Parse the string *name* then skip trailing whitespace.
+
+        Args:
+            name: The exact string to match.
+
+        Returns:
+            A lexeme parser that yields *name*.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.symbol("+"), "+  ")[0]
+            '+'
+        """
         return self.lexeme(string(name))
 
     def parens(self, p: Parsec[T]) -> Parsec[T]:
+        """Parse *p* enclosed in parentheses ``(`` ... ``)``.
+
+        Args:
+            p: The content parser.
+
+        Returns:
+            A parser yielding *p*'s result.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.parens(tp.integer), "(42)")[0]
+            42
+        """
         return between(self.symbol("("), self.symbol(")"), p)
 
     def braces(self, p: Parsec[T]) -> Parsec[T]:
+        """Parse *p* enclosed in curly braces ``{`` ... ``}``.
+
+        Args:
+            p: The content parser.
+
+        Returns:
+            A parser yielding *p*'s result.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.braces(tp.integer), "{42}")[0]
+            42
+        """
         return between(self.symbol("{"), self.symbol("}"), p)
 
     def angles(self, p: Parsec[T]) -> Parsec[T]:
+        """Parse *p* enclosed in angle brackets ``<`` ... ``>``.
+
+        Args:
+            p: The content parser.
+
+        Returns:
+            A parser yielding *p*'s result.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.angles(tp.integer), "<42>")[0]
+            42
+        """
         return between(self.symbol("<"), self.symbol(">"), p)
 
     def brackets(self, p: Parsec[T]) -> Parsec[T]:
+        """Parse *p* enclosed in square brackets ``[`` ... ``]``.
+
+        Args:
+            p: The content parser.
+
+        Returns:
+            A parser yielding *p*'s result.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.brackets(tp.integer), "[42]")[0]
+            42
+        """
         return between(self.symbol("["), self.symbol("]"), p)
 
     def semi_sep(self, p: Parsec[T]) -> Parsec[List[T]]:
+        """Parse zero or more occurrences of *p* separated by semicolons.
+
+        Args:
+            p: The element parser.
+
+        Returns:
+            A parser yielding a (possibly empty) list.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.semi_sep(tp.integer), "1;2;3")[0]
+            [1, 2, 3]
+        """
         return sep_by(p, self.semi)
 
     def semi_sep1(self, p: Parsec[T]) -> Parsec[List[T]]:
+        """Parse one or more occurrences of *p* separated by semicolons.
+
+        Args:
+            p: The element parser.
+
+        Returns:
+            A parser yielding a non-empty list.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.semi_sep1(tp.integer), "1;2")[0]
+            [1, 2]
+        """
         return sep_by1(p, self.semi)
 
     def comma_sep(self, p: Parsec[T]) -> Parsec[List[T]]:
+        """Parse zero or more occurrences of *p* separated by commas.
+
+        Args:
+            p: The element parser.
+
+        Returns:
+            A parser yielding a (possibly empty) list.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.comma_sep(tp.integer), "1,2,3")[0]
+            [1, 2, 3]
+        """
         return sep_by(p, self.comma)
 
     def comma_sep1(self, p: Parsec[T]) -> Parsec[List[T]]:
+        """Parse one or more occurrences of *p* separated by commas.
+
+        Args:
+            p: The element parser.
+
+        Returns:
+            A parser yielding a non-empty list.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Token import LanguageDef, TokenParser
+            >>> tp = TokenParser(LanguageDef())
+            >>> run_parser(tp.comma_sep1(tp.integer), "1,2")[0]
+            [1, 2]
+        """
         return sep_by1(p, self.comma)
 
     def reserved(self, name: str) -> Parsec[None]:
+        """Parse a reserved word, ensuring it is not a prefix of a longer identifier.
+
+        Args:
+            name: The reserved word to match.
+
+        Returns:
+            A lexeme parser that yields ``None``.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Language import haskell
+            >>> run_parser(haskell.reserved("let"), "let ")[0] is None
+            True
+        """
         return self.lexeme(self._make_reserved(name))
 
     def reserved_op(self, name: str) -> Parsec[None]:
+        """Parse a reserved operator, ensuring it is not a prefix of a longer operator.
+
+        Args:
+            name: The reserved operator to match.
+
+        Returns:
+            A lexeme parser that yields ``None``.
+
+        Example::
+
+            >>> from pyparsec import run_parser
+            >>> from pyparsec.Language import haskell
+            >>> run_parser(haskell.reserved_op("="), "= ")[0] is None
+            True
+        """
         return self.lexeme(self._make_reserved_op(name))
 
     # --- Internal Builders ---

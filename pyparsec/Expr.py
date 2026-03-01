@@ -1,4 +1,8 @@
-"""Expression parser builder with support for infix, prefix, and postfix operators."""
+"""Expression parser builder with support for infix, prefix, and postfix operators.
+
+Use :func:`build_expression_parser` with a table of :class:`Operator` definitions
+to construct a parser that respects precedence and associativity.
+"""
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable, Generic, List, TypeVar
@@ -11,6 +15,14 @@ T = TypeVar("T")
 
 
 class Assoc(Enum):
+    """Operator associativity for use in expression parser tables.
+
+    Members:
+        NONE: Non-associative (e.g. comparison operators).
+        LEFT: Left-associative (e.g. ``+``, ``-``).
+        RIGHT: Right-associative (e.g. ``^``, ``**``).
+    """
+
     NONE = auto()
     LEFT = auto()
     RIGHT = auto()
@@ -18,26 +30,95 @@ class Assoc(Enum):
 
 @dataclass
 class Operator(Generic[T]):
+    """Base class for expression operators.
+
+    Subclasses :class:`Infix`, :class:`Prefix`, and :class:`Postfix` carry
+    the parser and (for infix) the associativity.
+    """
+
     pass
 
 
 @dataclass
 class Infix(Operator[T]):
+    """A binary infix operator with a given associativity.
+
+    Attributes:
+        parser: A parser that consumes the operator token and returns a
+            binary function ``(T, T) -> T``.
+        assoc: The :class:`Assoc` associativity of this operator.
+
+    Example::
+
+        >>> from pyparsec.Expr import Infix, Assoc
+        >>> from pyparsec.Char import char
+        >>> add_op = Infix(char('+').map(lambda _: lambda a, b: a + b), Assoc.LEFT)
+    """
+
     parser: Parsec[Callable[[T, T], T]]
     assoc: Assoc
 
 
 @dataclass
 class Prefix(Operator[T]):
+    """A unary prefix operator (e.g. negation).
+
+    Attributes:
+        parser: A parser that consumes the operator token and returns a
+            unary function ``T -> T``.
+
+    Example::
+
+        >>> from pyparsec.Expr import Prefix
+        >>> from pyparsec.Char import char
+        >>> neg = Prefix(char('-').map(lambda _: lambda x: -x))
+    """
+
     parser: Parsec[Callable[[T], T]]
 
 
 @dataclass
 class Postfix(Operator[T]):
+    """A unary postfix operator (e.g. factorial).
+
+    Attributes:
+        parser: A parser that consumes the operator token and returns a
+            unary function ``T -> T``.
+
+    Example::
+
+        >>> from pyparsec.Expr import Postfix
+        >>> from pyparsec.Char import char
+        >>> post_inc = Postfix(char('+').map(lambda _: lambda x: x + 1))
+    """
+
     parser: Parsec[Callable[[T], T]]
 
 
 def build_expression_parser(table: List[List[Operator[T]]], simple_term: Parsec[T]) -> Parsec[T]:
+    """Build a parser for expressions with operators at varying precedence levels.
+
+    Args:
+        table: A list of operator groups ordered from lowest to highest precedence.
+            Each group is a list of ``Operator`` values (``Infix``, ``Prefix``,
+            or ``Postfix``) that share the same precedence level.
+        simple_term: A parser for the atomic terms of the expression (e.g. numbers
+            or parenthesised sub-expressions).
+
+    Returns:
+        A parser that handles the full expression grammar with correct precedence
+        and associativity.
+
+    Example::
+
+        >>> from pyparsec import run_parser
+        >>> from pyparsec.Char import char, digit
+        >>> from pyparsec.Expr import Assoc, Infix, build_expression_parser
+        >>> num = digit().map(int)
+        >>> table = [[Infix(char('+').map(lambda _: lambda a, b: a + b), Assoc.LEFT)]]
+        >>> run_parser(build_expression_parser(table, num), "1+2+3")[0]
+        6
+    """
     term = simple_term
     for ops in table:
         term = _make_level_parser(ops, term)
