@@ -1,14 +1,17 @@
+from functools import reduce
+
+from hypothesis import given, assume, settings
+from hypothesis import strategies as st
+
 from pyparsec.Char import char, digit
 from pyparsec.Combinators import many1
 from pyparsec.Expr import Assoc, Infix, Prefix, build_expression_parser
 from pyparsec.Prim import run_parser
 
 
-def test_arithmetic_precedence():
-    # 1. Define atomic terms
+def _build_arithmetic_parser():
     integer = many1(digit()).map(lambda d: int("".join(d)))
 
-    # 2. Define Operations
     def add(x, y):
         return x + y
 
@@ -24,10 +27,6 @@ def test_arithmetic_precedence():
     def neg(x):
         return -x
 
-    # 3. Build Table
-    # Level 1: Prefix '-' (Negation)
-    # Level 2: *, / (Left Assoc) - Higher precedence
-    # Level 3: +, - (Left Assoc) - Lower precedence
     table = [
         [Prefix(char("-").map(lambda _: neg))],
         [
@@ -40,40 +39,87 @@ def test_arithmetic_precedence():
         ],
     ]
 
-    expr_parser = build_expression_parser(table, integer)
-
-    def run(s):
-        res, _ = run_parser(expr_parser, s)
-        return res
-
-    # Basic
-    assert run("1+2") == 3
-    assert run("2*3") == 6
-
-    # Precedence: 2 + 3 * 4 -> 2 + 12 -> 14 (Not 20)
-    assert run("2+3*4") == 14
-    assert run("2*3+4") == 10
-
-    # Associativity: 10 - 5 - 2 -> (10-5)-2 -> 3 (Not 7)
-    assert run("10-5-2") == 3
-
-    # Prefix: -3 * 2 -> -6
-    assert run("-3*2") == -6
-
-    # Prefix + Precedence: -2+3 -> 1
-    assert run("-2+3") == 1
+    return build_expression_parser(table, integer)
 
 
-def test_right_associativity():
-    # Power operator ^ is right associative
-    # 2 ^ 3 ^ 2 -> 2 ^ 9 -> 512
+@given(
+    st.lists(st.integers(min_value=1, max_value=9), min_size=2, max_size=6),
+    st.lists(
+        st.sampled_from(["+", "-", "*"]),
+        min_size=1,
+        max_size=5,
+    ),
+)
+@settings(deadline=None)
+def test_prop_arithmetic_precedence(nums, ops):
+    """Property: parsing an expression string gives the same result as Python eval."""
+    assume(len(ops) == len(nums) - 1)
+
+    expr_parser = _build_arithmetic_parser()
+
+    # Build expression string: "3+2*4-1"
+    expr_str = str(nums[0])
+    for op, n in zip(ops, nums[1:]):
+        expr_str += op + str(n)
+
+    res, err = run_parser(expr_parser, expr_str)
+    expected = eval(expr_str)  # Safe: only digits and +-*
+
+    assert err is None
+    assert res == expected
+
+
+@given(st.lists(st.integers(min_value=1, max_value=9), min_size=2, max_size=6))
+@settings(deadline=None)
+def test_prop_left_associativity(nums):
+    """Property: subtraction is left-associative — a-b-c == (a-b)-c."""
+    expr_parser = _build_arithmetic_parser()
+
+    expr_str = "-".join(str(n) for n in nums)
+    res, err = run_parser(expr_parser, expr_str)
+
+    # Left-fold subtraction
+    expected = reduce(lambda a, b: a - b, nums)
+
+    assert err is None
+    assert res == expected
+
+
+@given(st.lists(st.integers(min_value=1, max_value=9), min_size=1, max_size=4))
+@settings(deadline=None)
+def test_prop_prefix_negation(nums):
+    """Property: prefix negation applies before other operations."""
+    expr_parser = _build_arithmetic_parser()
+
+    # Build: -a*b+c...
+    expr_str = "-" + str(nums[0])
+    if len(nums) > 1:
+        expr_str += "+" + "+".join(str(n) for n in nums[1:])
+
+    res, err = run_parser(expr_parser, expr_str)
+    expected = -nums[0] + sum(nums[1:])
+
+    assert err is None
+    assert res == expected
+
+
+@given(st.lists(st.integers(min_value=1, max_value=2), min_size=2, max_size=3))
+@settings(deadline=None)
+def test_prop_right_associativity(bases):
+    """Property: ^ is right-associative — a^b^c == a^(b^c)."""
     integer = many1(digit()).map(lambda d: int("".join(d)))
 
     def power(x, y):
-        return x**y
+        return x ** y
 
     table = [[Infix(char("^").map(lambda _: power), Assoc.RIGHT)]]
-
     expr = build_expression_parser(table, integer)
 
-    assert run_parser(expr, "2^3^2")[0] == 512
+    expr_str = "^".join(str(b) for b in bases)
+    res, err = run_parser(expr, expr_str)
+
+    # Right-fold exponentiation
+    expected = reduce(lambda a, b: b ** a, reversed(bases))
+
+    assert err is None
+    assert res == expected

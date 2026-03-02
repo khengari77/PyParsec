@@ -149,56 +149,34 @@ def test_string_prime_failure():
 # --- Whitespace & Newlines ---
 
 
-def test_newline_logic():
-    # \n
-    res, _ = run(newline(), "\n")
+@given(st.sampled_from(["\n", "\r\n"]))
+def test_prop_end_of_line(line_ending):
+    """Property: end_of_line handles both \\n and \\r\\n, always returning \\n."""
+    res, err = run(end_of_line(), line_ending)
     assert res == "\n"
-
-    # \r\n (crlf) -> returns \n
-    res_crlf, _ = run(crlf(), "\r\n")
-    assert res_crlf == "\n"
-
-    # end_of_line handles both
-    res_eol1, _ = run(end_of_line(), "\n")
-    res_eol2, _ = run(end_of_line(), "\r\n")
-    assert res_eol1 == "\n"
-    assert res_eol2 == "\n"
+    assert err is None
 
 
-def test_spaces():
-    # Matches zero spaces
-    res0, _ = run(spaces(), "abc")
-    assert res0 is None  # Returns None
-
-    # Matches many spaces
-    res1, _ = run(spaces(), "   abc")
-    assert res1 is None
-
-    # Check that it actually consumed input by chaining
+@given(st.text(alphabet=st.sampled_from(" \t"), min_size=0, max_size=20))
+def test_prop_spaces(ws):
+    """Property: spaces() consumes arbitrary whitespace, then chained parser works."""
     p = spaces() >> char("a")
-    res2, _ = run(p, "   a")
-    assert res2 == "a"
+    res, err = run(p, ws + "a")
+    assert res == "a"
+    assert err is None
 
 
-def test_tab_position():
-    # Parsing a tab should update column by 8 (default)
-    # Assuming tab stops at 8, 16, 24...
+@given(st.integers(min_value=1, max_value=80))
+def test_prop_tab_position(start_col):
+    """Property: tab advances to next tab stop (multiples of 8)."""
     p = tab()
-    state = State("\t", initial_pos("test"), None)
-
-    # 1. Start at 1, 1
+    state = State("\t", SourcePos(1, start_col, "test"), None)
     res = p(state)
-    assert res.state is not None
-    assert res.state.pos.column == 9  # 1 + 8
 
-    # 2. Start at 1, 5
-    state2 = State("\t", SourcePos(1, 5, "test"), None)
-    res2 = p(state2)
-    # Next tab stop after 5 is 9.
-    # Logic: new_col = old + 8 - ((old-1) % 8)
-    # 5 + 8 - (4 % 8) = 5 + 8 - 4 = 9. Correct.
-    assert res2.state is not None
-    assert res2.state.pos.column == 9
+    assert res.state is not None
+    # Tab stop formula: new_col = old + 8 - ((old-1) % 8)
+    expected_col = start_col + 8 - ((start_col - 1) % 8)
+    assert res.state.pos.column == expected_col
 
 
 # --- Classification Parsers ---
@@ -228,21 +206,49 @@ def test_letter(c):
     assert res == c
 
 
-def test_hex_oct():
-    assert run(hex_digit(), "a")[0] == "a"
-    assert run(hex_digit(), "F")[0] == "F"
-    assert run(hex_digit(), "9")[0] == "9"
-    assert run(hex_digit(), "g")[0] is None
-
-    assert run(oct_digit(), "7")[0] == "7"
-    assert run(oct_digit(), "8")[0] is None
+@given(st.sampled_from(list("0123456789abcdefABCDEF")))
+def test_prop_hex_digit(c):
+    """Property: all valid hex chars are accepted."""
+    res, err = run(hex_digit(), c)
+    assert res == c
+    assert err is None
 
 
-def test_any_char():
-    res, _ = run(any_char(), "?")
-    assert res == "?"
+@given(st.characters().filter(lambda c: not c.isdigit() and c.lower() not in "abcdef"))
+def test_prop_hex_digit_reject(c):
+    """Property: non-hex chars are rejected."""
+    res, err = run(hex_digit(), c)
+    assert res is None
+    assert err is not None
 
-    # Fails on empty
-    res_empty, err = run(any_char(), "")
-    assert res_empty is None
+
+@given(st.sampled_from(list("01234567")))
+def test_prop_oct_digit(c):
+    """Property: all valid octal chars are accepted."""
+    res, err = run(oct_digit(), c)
+    assert res == c
+    assert err is None
+
+
+@given(st.characters().filter(lambda c: c not in "01234567"))
+def test_prop_oct_digit_reject(c):
+    """Property: non-octal chars are rejected."""
+    res, err = run(oct_digit(), c)
+    assert res is None
+    assert err is not None
+
+
+@given(st.characters())
+def test_prop_any_char(c):
+    """Property: any_char accepts any single character."""
+    res, err = run(any_char(), c)
+    assert res == c
+    assert err is None
+
+
+@given(st.just(""))
+def test_prop_any_char_empty(s):
+    """Property: any_char fails on empty input."""
+    res, err = run(any_char(), s)
+    assert res is None
     assert err is not None

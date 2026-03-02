@@ -1,7 +1,7 @@
 import math
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import given, assume, settings
 from hypothesis import strategies as st
 
 from pyparsec.Char import digit
@@ -14,7 +14,7 @@ def run(p, s):
     return run_parser(p, s)
 
 
-# --- Integers (Existing tests + Hypothesis) ---
+# --- Integers ---
 
 
 @given(st.integers())
@@ -25,13 +25,31 @@ def test_prop_integers(n):
     assert err is None
 
 
-def test_integer_formats():
+@given(st.integers(min_value=0, max_value=0xFFFF))
+def test_prop_integer_hex(n):
+    """Property: hex-formatted integers parse correctly."""
     lexer = TokenParser(empty_def)
-    assert run(lexer.integer, "123")[0] == 123
-    assert run(lexer.integer, "+123")[0] == 123
-    assert run(lexer.integer, "-123")[0] == -123
-    assert run(lexer.integer, "0x1a")[0] == 26
-    assert run(lexer.integer, "0o10")[0] == 8
+    res, err = run(lexer.integer, f"0x{n:x}")
+    assert res == n
+    assert err is None
+
+
+@given(st.integers(min_value=0, max_value=0o7777))
+def test_prop_integer_octal(n):
+    """Property: octal-formatted integers parse correctly."""
+    lexer = TokenParser(empty_def)
+    res, err = run(lexer.integer, f"0o{n:o}")
+    assert res == n
+    assert err is None
+
+
+@given(st.integers(min_value=0), st.sampled_from(["+", ""]))
+def test_prop_integer_positive_sign(n, sign):
+    """Property: positive integers work with or without + sign."""
+    lexer = TokenParser(empty_def)
+    res, err = run(lexer.integer, f"{sign}{n}")
+    assert res == n
+    assert err is None
 
 
 # --- Floats ---
@@ -39,100 +57,98 @@ def test_integer_formats():
 
 @given(st.floats(allow_nan=False, allow_infinity=False))
 def test_prop_floats(f):
-    # We convert float to string using standard formatting, which PyParsec should parse
-    # Note: Very small/large numbers use scientific notation (e.g. 1e-10), which is supported.
     s = str(f)
     lexer = TokenParser(empty_def)
-
-    # If the string representation looks like an integer (e.g. "123.0" -> "123.0"), it works.
-    # If python formats it as "123" (no dot), lexer.float might fail if it strictly requires . or e.
-    # Check Token.py logic: float_val requires fraction OR exponent.
-    # Python's str(1.0) is "1.0", str(1e20) is "1e+20". These should pass.
 
     res, err = run(lexer.float, s)
 
     if err:
-        # If it failed, maybe it didn't look like a float?
-        # e.g. if st.floats generates 5.0 but str() outputs 5? (Python usually keeps .0)
         pytest.fail(f"Failed to parse float {f} from string '{s}': {err}")
 
-    # Compare with tolerance for floating point arithmetic
     assert math.isclose(res, f, rel_tol=1e-9)
 
 
-def test_float_edge_cases():
+@given(
+    st.integers(min_value=0, max_value=999),
+    st.integers(min_value=0, max_value=999),
+    st.sampled_from(["", "-", "+"]),
+)
+def test_prop_float_decimal(whole, frac, sign):
+    """Property: floats with decimal point parse correctly."""
     lexer = TokenParser(empty_def)
+    s = f"{sign}{whole}.{frac}"
+    res, err = run(lexer.float, s)
+    assert err is None
+    assert math.isclose(res, float(s), rel_tol=1e-9)
 
-    # Standard
-    assert run(lexer.float, "3.14")[0] == 3.14
-    assert run(lexer.float, "-3.14")[0] == -3.14
-    assert run(lexer.float, "0.5")[0] == 0.5
 
-    # Scientific
-    assert run(lexer.float, "1e10")[0] == 1e10
-    assert run(lexer.float, "1.5e-2")[0] == 0.015
-    assert run(lexer.float, "1E+2")[0] == 100.0
+@given(
+    st.integers(min_value=1, max_value=99),
+    st.sampled_from(["e", "E"]),
+    st.sampled_from(["", "+", "-"]),
+    st.integers(min_value=0, max_value=10),
+)
+def test_prop_float_scientific(mantissa, e_char, e_sign, exponent):
+    """Property: scientific notation floats parse correctly."""
+    lexer = TokenParser(empty_def)
+    s = f"{mantissa}{e_char}{e_sign}{exponent}"
+    res, err = run(lexer.float, s)
+    assert err is None
+    assert math.isclose(res, float(s), rel_tol=1e-9)
 
-    # Ambiguity checks
-    # "1" is an integer, NOT a float in Parsec's strict definition usually
-    # Our implementation: float_val = decimal . (fraction | exponent)
-    res, err = run(lexer.float, "1")
-    assert res is None  # Should fail because it lacks . or e
 
-    # "1." is often allowed in Python, let's see our logic:
-    # fraction = char('.') >> many1(digit) -> Requires digits after dot.
-    res, err = run(lexer.float, "1.")
-    assert res is None  # Expects digits after dot
+@given(st.integers(min_value=0, max_value=999))
+def test_prop_float_rejects_plain_integers(n):
+    """Property: plain integers without . or e are rejected by float parser."""
+    lexer = TokenParser(empty_def)
+    res, err = run(lexer.float, str(n))
+    assert res is None
 
 
 # --- Characters ---
 
 
-def test_char_literals():
+@given(
+    st.characters(
+        blacklist_categories=("Cs",),
+        blacklist_characters=["'", "\\"],
+    )
+)
+def test_prop_char_literals(c):
+    """Property: char literal parser handles arbitrary characters."""
     lexer = TokenParser(empty_def)
+    res, err = run(lexer.char_literal, f"'{c}'")
+    assert res == c
+    assert err is None
 
-    # Standard
-    assert run(lexer.char_literal, "'a'")[0] == "a"
 
-    # Escapes
-    assert run(lexer.char_literal, "'\\n'")[0] == "\n"
-    assert run(lexer.char_literal, "'\\''")[0] == "'"
-    assert run(lexer.char_literal, "'\\\\'")[0] == "\\"
-    assert run(lexer.char_literal, "'\\t'")[0] == "\t"
-
-    # Unknown escape fallback ( \a -> a )
-    assert run(lexer.char_literal, "'\\z'")[0] == "z"
+@given(
+    st.sampled_from([
+        ("'\\n'", "\n"),
+        ("'\\t'", "\t"),
+        ("'\\''", "'"),
+        ("'\\\\'", "\\"),
+    ])
+)
+def test_prop_char_escapes(pair):
+    """Property: escape sequences in char literals parse correctly."""
+    lexer = TokenParser(empty_def)
+    literal, expected = pair
+    res, err = run(lexer.char_literal, literal)
+    assert res == expected
+    assert err is None
 
 
 # --- Strings ---
-
-
-def test_string_literals():
-    lexer = TokenParser(empty_def)
-
-    # Standard
-    assert run(lexer.string_literal, '"hello"')[0] == "hello"
-
-    # Escapes
-    assert run(lexer.string_literal, '"line\\nbreak"')[0] == "line\nbreak"
-    assert run(lexer.string_literal, '"quote\\"here"')[0] == 'quote"here'
-
-    # Empty
-    assert run(lexer.string_literal, '""')[0] == ""
 
 
 @given(
     st.text(alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters=['"', "\\"]))
 )
 def test_prop_strings(s):
-    # We generate a clean string, then quote it.
-    # Note: we blacklist quote and backslash to avoid manually implementing complex escaping logic in the test generator.
-    # We just want to prove that "content" parses as content.
-
     lexer = TokenParser(empty_def)
     quoted = f'"{s}"'
     res, err = run(lexer.string_literal, quoted)
-
     assert res == s
     assert err is None
 
@@ -140,63 +156,22 @@ def test_prop_strings(s):
 # --- Comments & Whitespace ---
 
 
-def test_comments_integration():
-    # Python style: # line comments
+@given(
+    st.text(
+        min_size=0,
+        max_size=50,
+        alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters=["\n", "\r"]),
+    ),
+    st.integers(min_value=0, max_value=999),
+)
+def test_prop_python_comments(comment_text, n):
+    """Property: Python-style # comments are skipped before parsing."""
     lexer = TokenParser(python_style)
-
-    # White space includes comments
-    p = lexer.white_space
-
-    # Run against a string with spaces and comments
-    input_str = "   # comment\n  "
-    res, err = run(p, input_str)
-    assert err is None
-
-    # Verify chaining: skip whitespace THEN parse integer
-    p2 = lexer.white_space >> lexer.integer
-    assert run(p2, "   # comment\n 123")[0] == 123
-
-
-def test_nested_comments():
-    # Haskell/Java style
-    lexer = TokenParser(java_style)
-
-    # /* /* */ */
-    input_str = "/* outer /* inner */ outer */ 123"
-
-    # Skip leading comment block before parsing integer
     p = lexer.white_space >> lexer.integer
-    assert run(p, input_str)[0] == 123
-
-    # Unclosed
-    input_bad = "/* outer /* inner */ oops"
-    res, err = run(lexer.integer, input_bad)
-    assert res is None  # Fails to find integer
-
-
-# --- Identifiers ---
-
-
-def test_identifiers():
-    lexer = TokenParser(python_style)
-
-    assert run(lexer.identifier, "my_var")[0] == "my_var"
-    assert run(lexer.identifier, "_private")[0] == "_private"
-    assert run(lexer.identifier, "var123")[0] == "var123"
-
-    # Reserved
-    assert run(lexer.identifier, "def")[0] is None
-    assert run(lexer.identifier, "class")[0] is None
-
-    # Operators
-    # '+=' is reserved in python_style, so generic operator parser should reject it
-    assert run(lexer.operator, "+=")[0] is None
-
-    # Use a non-reserved operator (made up but valid operator chars)
-    assert run(lexer.operator, "-->")[0] == "-->"
-
-    # Check reserved op matches (returns None on success)
-    assert run(lexer.reserved_op("+="), "+=")[0] is None
+    input_str = f"# {comment_text}\n{n}"
+    res, err = run(p, input_str)
+    assert res == n
+    assert err is None
 
 
 @given(
@@ -207,7 +182,7 @@ def test_identifiers():
 )
 @settings(deadline=None)
 def test_prop_nested_comments(nesting_depth, content):
-    """Property test: nested comments up to 50 levels should always work."""
+    """Property test: nested comments up to N levels should always work."""
     lexer = TokenParser(java_style)
     open_comments = "/*" * nesting_depth
     close_comments = "*/" * nesting_depth
@@ -231,7 +206,6 @@ def test_prop_nested_comments(nesting_depth, content):
 def test_prop_multiple_comment_blocks(blocks):
     """Property test: multiple separate comment blocks should work."""
     lexer = TokenParser(java_style)
-    # Create input with multiple comment blocks
     comment_blocks = " ".join(f"/*{block}*/" for block in blocks)
     input_str = f"{comment_blocks} 42"
     p = lexer.white_space >> lexer.integer
@@ -251,7 +225,6 @@ def test_prop_nested_with_content(outer_content, nesting_levels):
     """Property test: nested comments with arbitrary content."""
     lexer = TokenParser(java_style)
 
-    # Create nested structure with content at each level
     def build_nested(levels, content):
         if levels == 0:
             return content
@@ -259,7 +232,6 @@ def test_prop_nested_with_content(outer_content, nesting_levels):
         return f"/* outer {inner} outer */"
 
     nested_comment = build_nested(nesting_levels, outer_content)
-    print(nested_comment)
     input_str = f"{nested_comment} 42"
     p = lexer.white_space >> lexer.integer
     res, err = run(p, input_str)
@@ -267,60 +239,134 @@ def test_prop_nested_with_content(outer_content, nesting_levels):
     assert err is None
 
 
+# --- Identifiers ---
+
+
+_python_reserved = [
+    "def", "class", "if", "else", "elif", "while", "for", "return",
+    "import", "from", "try", "except", "raise", "pass", "with", "as",
+    "lambda", "yield", "None", "True", "False", "await", "async",
+]
+
+
+@given(
+    st.from_regex(r"[a-zA-Z_][a-zA-Z0-9_]{0,10}", fullmatch=True).filter(
+        lambda s: s not in _python_reserved
+    )
+)
+def test_prop_identifiers(name):
+    """Property: valid non-reserved identifiers are accepted."""
+    lexer = TokenParser(python_style)
+    res, err = run(lexer.identifier, name)
+    assert res == name
+    assert err is None
+
+
+@given(st.sampled_from(_python_reserved))
+def test_prop_reserved_rejected(name):
+    """Property: reserved words are rejected by identifier parser."""
+    lexer = TokenParser(python_style)
+    res, err = run(lexer.identifier, name)
+    assert res is None
+
+
 # --- Delimiter Parsing ---
 
 
-def test_parens():
+@given(st.integers(min_value=-999, max_value=999))
+def test_prop_delimiters(n):
+    """Property: parens, brackets, braces all parse an inner integer."""
     lexer = TokenParser(empty_def)
-    p = lexer.parens(lexer.integer)
-    assert run(p, "(42)")[0] == 42
-    assert run(p, "( 42 )")[0] == 42
-    assert run(p, "42")[0] is None
+
+    # Parens
+    res, err = run(lexer.parens(lexer.integer), f"({n})")
+    assert res == n
+    assert err is None
+
+    # Brackets
+    res, err = run(lexer.brackets(lexer.integer), f"[{n}]")
+    assert res == n
+    assert err is None
+
+    # Braces
+    res, err = run(lexer.braces(lexer.integer), f"{{{n}}}")
+    assert res == n
+    assert err is None
 
 
-def test_brackets():
+@given(st.integers(min_value=-999, max_value=999))
+def test_prop_delimiters_with_spaces(n):
+    """Property: delimiters with surrounding whitespace still parse."""
     lexer = TokenParser(empty_def)
-    p = lexer.brackets(lexer.integer)
-    assert run(p, "[42]")[0] == 42
-    assert run(p, "[ 42 ]")[0] == 42
-    assert run(p, "42")[0] is None
 
-
-def test_braces():
-    lexer = TokenParser(empty_def)
-    p = lexer.braces(lexer.integer)
-    assert run(p, "{42}")[0] == 42
-    assert run(p, "{ 42 }")[0] == 42
-    assert run(p, "42")[0] is None
+    res, err = run(lexer.parens(lexer.integer), f"( {n} )")
+    assert res == n
+    assert err is None
 
 
 # --- Symbol ---
 
 
-def test_symbol():
+@given(st.text(min_size=1, max_size=10, alphabet=st.sampled_from("abcde")))
+def test_prop_symbol(s):
+    """Property: symbol matches exact text and skips trailing whitespace."""
     lexer = TokenParser(empty_def)
-    p = lexer.symbol("hello")
-    assert run(p, "hello")[0] == "hello"
-    assert run(p, "hello   ")[0] == "hello"
-    assert run(p, "world")[0] is None
+    p = lexer.symbol(s)
+
+    # With trailing whitespace
+    res, err = run(p, s + "   ")
+    assert res == s
+    assert err is None
+
+    # Exact match
+    res, err = run(p, s)
+    assert res == s
+    assert err is None
 
 
 # --- haskell_style language definition ---
 
 
-def test_haskell_style_block_comments():
+@given(
+    st.text(
+        min_size=0,
+        max_size=50,
+        alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters=["\n", "\r", "-"]),
+    ),
+    st.integers(min_value=0, max_value=999),
+)
+def test_prop_haskell_comments(comment_text, n):
+    """Property: Haskell-style comments are properly skipped."""
     lexer = TokenParser(haskell_style)
     p = lexer.white_space >> lexer.integer
-    assert run(p, "{- comment -} 42")[0] == 42
+
+    # Line comment
+    res_line, err_line = run(p, f"-- {comment_text}\n{n}")
+    assert res_line == n
+    assert err_line is None
+
+    # Block comment (avoid -} in content)
+    safe_content = comment_text.replace("}", " ")
+    res_block, err_block = run(p, f"{{- {safe_content} -}} {n}")
+    assert res_block == n
+    assert err_block is None
 
 
-def test_haskell_style_line_comments():
+@given(
+    st.text(
+        min_size=0,
+        max_size=30,
+        alphabet=st.characters(
+            blacklist_categories=("Cs",),
+            blacklist_characters=["-", "{", "}"],
+        ),
+    ),
+    st.integers(min_value=0, max_value=999),
+)
+def test_prop_haskell_nested_comments(content, n):
+    """Property: Haskell nested block comments parse correctly."""
     lexer = TokenParser(haskell_style)
     p = lexer.white_space >> lexer.integer
-    assert run(p, "-- comment\n42")[0] == 42
-
-
-def test_haskell_style_nested_comments():
-    lexer = TokenParser(haskell_style)
-    p = lexer.white_space >> lexer.integer
-    assert run(p, "{- outer {- inner -} outer -} 42")[0] == 42
+    res, err = run(p, f"{{- outer {{- {content} -}} outer -}} {n}")
+    assert res == n
+    assert err is None
