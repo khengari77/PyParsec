@@ -9,7 +9,6 @@ This module defines the foundational types used throughout PyParsec:
 - :class:`Parsec` -- the central parser combinator type
 """
 from dataclasses import dataclass, field
-from enum import Enum, auto
 from typing import Any, Callable, Generic, List, Optional, Sequence, Tuple, TypeVar, Union, cast
 
 T = TypeVar("T")  # Generic type for parser results
@@ -178,7 +177,13 @@ class State(Generic[Inp]):
         return cast(Inp, self.input[self.index:])
 
 
-class MessageType(Enum):
+SYS_UNEXPECT = 1
+UNEXPECT = 2
+EXPECT = 3
+MESSAGE = 4
+
+
+class MessageType:
     """Categories of messages that can appear in a parse error.
 
     Members:
@@ -188,10 +193,10 @@ class MessageType(Enum):
         MESSAGE: Free-form diagnostic message (via ``fail``).
     """
 
-    SYS_UNEXPECT = auto()
-    UNEXPECT = auto()
-    EXPECT = auto()
-    MESSAGE = auto()
+    SYS_UNEXPECT = SYS_UNEXPECT
+    UNEXPECT = UNEXPECT
+    EXPECT = EXPECT
+    MESSAGE = MESSAGE
 
 
 @dataclass(frozen=True)
@@ -208,8 +213,8 @@ class Message:
 
     def __lt__(self, other: "Message") -> bool:
         """Compare messages by type then text for deterministic sorting."""
-        if self.type.value != other.type.value:
-            return self.type.value < other.type.value
+        if self.type != other.type:
+            return self.type < other.type
         return self.text < other.text
 
 
@@ -582,8 +587,14 @@ class Parsec(Generic[T]):
             res_next = next_parser(ok_reply.state)
             consumed_overall = res_self.consumed or res_next.consumed
 
-            # Merge errors (ghost or actual)
-            merged_err = ParseError.merge(ok_reply.error, res_next.error)
+            # Inline merge short-circuit: skip function call for no-op cases
+            err1_msgs = ok_reply.error.messages
+            if not err1_msgs:
+                merged_err = res_next.error
+            elif not res_next.error.messages:
+                merged_err = ok_reply.error
+            else:
+                merged_err = ParseError.merge(ok_reply.error, res_next.error)
 
             if isinstance(res_next.reply, Error):
                 return ParseResult(Error(merged_err), consumed_overall)
@@ -671,11 +682,24 @@ class Parsec(Generic[T]):
             ok_self: Ok[T] = res_self.reply
             res_other = other(ok_self.state)
             consumed = res_self.consumed or res_other.consumed
+            # Inline merge short-circuit
+            err1_msgs = ok_self.error.messages
             if isinstance(res_other.reply, Error):
-                merged = ParseError.merge(ok_self.error, res_other.reply.error)
+                err2 = res_other.reply.error
+                if not err1_msgs:
+                    merged = err2
+                elif not err2.messages:
+                    merged = ok_self.error
+                else:
+                    merged = ParseError.merge(ok_self.error, err2)
                 return ParseResult(Error(merged), consumed)
             ok_other: Ok[U] = res_other.reply
-            merged = ParseError.merge(ok_self.error, ok_other.error)
+            if not err1_msgs:
+                merged = ok_other.error
+            elif not ok_other.error.messages:
+                merged = ok_self.error
+            else:
+                merged = ParseError.merge(ok_self.error, ok_other.error)
             return ParseResult(Ok(ok_other.value, ok_other.state, merged), consumed)
 
         return Parsec(parse)
@@ -702,11 +726,24 @@ class Parsec(Generic[T]):
             ok_self: Ok[T] = res_self.reply
             res_other = other(ok_self.state)
             consumed = res_self.consumed or res_other.consumed
+            # Inline merge short-circuit
+            err1_msgs = ok_self.error.messages
             if isinstance(res_other.reply, Error):
-                merged = ParseError.merge(ok_self.error, res_other.reply.error)
+                err2 = res_other.reply.error
+                if not err1_msgs:
+                    merged = err2
+                elif not err2.messages:
+                    merged = ok_self.error
+                else:
+                    merged = ParseError.merge(ok_self.error, err2)
                 return ParseResult(Error(merged), consumed)
             ok_other: Ok[U] = res_other.reply
-            merged = ParseError.merge(ok_self.error, ok_other.error)
+            if not err1_msgs:
+                merged = ok_other.error
+            elif not ok_other.error.messages:
+                merged = ok_self.error
+            else:
+                merged = ParseError.merge(ok_self.error, ok_other.error)
             return ParseResult(Ok(ok_self.value, ok_other.state, merged), consumed)
 
         return Parsec(parse)
