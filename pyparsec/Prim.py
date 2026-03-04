@@ -494,6 +494,135 @@ def tokens_prime(
     return look_ahead(p)
 
 
+def take_while(predicate: Callable[[str], bool]) -> Parsec[str]:
+    """Scan zero or more characters matching *predicate* and return the matched string.
+
+    Operates in bulk — no per-character parser overhead. Creates exactly one
+    State and one ParseResult regardless of how many characters matched.
+
+    Args:
+        predicate: A function that returns ``True`` for characters to consume.
+
+    Returns:
+        A parser yielding the matched substring (possibly empty).
+    """
+
+    def parse(state: State) -> ParseResult[str]:
+        inp = state.input
+        idx = state.index
+        length = len(inp)
+        end = idx
+        while end < length and predicate(inp[end]):
+            end += 1
+        if end == idx:
+            return ParseResult.ok_empty("", state, ParseError.new_unknown(state.pos))
+        matched = inp[idx:end]
+        new_pos = update_pos_string(state.pos, matched)
+        new_state = State(inp, new_pos, state.user, end)
+        return ParseResult.ok_consumed(matched, new_state, ParseError.new_unknown(new_pos))
+
+    return Parsec(parse)
+
+
+def take_while1(predicate: Callable[[str], bool]) -> Parsec[str]:
+    """Scan one or more characters matching *predicate* and return the matched string.
+
+    Like :func:`take_while` but fails if no characters match.
+
+    Args:
+        predicate: A function that returns ``True`` for characters to consume.
+
+    Returns:
+        A parser yielding the non-empty matched substring.
+    """
+
+    def parse(state: State) -> ParseResult[str]:
+        inp = state.input
+        idx = state.index
+        length = len(inp)
+        end = idx
+        while end < length and predicate(inp[end]):
+            end += 1
+        if end == idx:
+            if idx >= length:
+                return ParseResult.error_empty(
+                    ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, "")
+                )
+            return ParseResult.error_empty(
+                ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, repr(inp[idx]))
+            )
+        matched = inp[idx:end]
+        new_pos = update_pos_string(state.pos, matched)
+        new_state = State(inp, new_pos, state.user, end)
+        return ParseResult.ok_consumed(matched, new_state, ParseError.new_unknown(new_pos))
+
+    return Parsec(parse)
+
+
+def skip_while(predicate: Callable[[str], bool]) -> Parsec[None]:
+    """Skip zero or more characters matching *predicate*.
+
+    Operates in bulk — no per-character parser overhead.
+
+    Args:
+        predicate: A function that returns ``True`` for characters to skip.
+
+    Returns:
+        A parser that always yields ``None``.
+    """
+
+    def parse(state: State) -> ParseResult[None]:
+        inp = state.input
+        idx = state.index
+        length = len(inp)
+        end = idx
+        while end < length and predicate(inp[end]):
+            end += 1
+        if end == idx:
+            return ParseResult.ok_empty(None, state, ParseError.new_unknown(state.pos))
+        matched = inp[idx:end]
+        new_pos = update_pos_string(state.pos, matched)
+        new_state = State(inp, new_pos, state.user, end)
+        return ParseResult.ok_consumed(None, new_state, ParseError.new_unknown(new_pos))
+
+    return Parsec(parse)
+
+
+def skip_while1(predicate: Callable[[str], bool]) -> Parsec[None]:
+    """Skip one or more characters matching *predicate*.
+
+    Like :func:`skip_while` but fails if no characters match.
+
+    Args:
+        predicate: A function that returns ``True`` for characters to skip.
+
+    Returns:
+        A parser that yields ``None``.
+    """
+
+    def parse(state: State) -> ParseResult[None]:
+        inp = state.input
+        idx = state.index
+        length = len(inp)
+        end = idx
+        while end < length and predicate(inp[end]):
+            end += 1
+        if end == idx:
+            if idx >= length:
+                return ParseResult.error_empty(
+                    ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, "")
+                )
+            return ParseResult.error_empty(
+                ParseError.new_message(state.pos, MessageType.SYS_UNEXPECT, repr(inp[idx]))
+            )
+        matched = inp[idx:end]
+        new_pos = update_pos_string(state.pos, matched)
+        new_state = State(inp, new_pos, state.user, end)
+        return ParseResult.ok_consumed(None, new_state, ParseError.new_unknown(new_pos))
+
+    return Parsec(parse)
+
+
 def lazy(parser_producer: Callable[[], Parsec[T]]) -> Parsec[T]:
     """Defer parser construction for recursive grammars.
 

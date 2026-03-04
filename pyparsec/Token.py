@@ -29,7 +29,7 @@ from .Combinators import (
     skip_many1,
 )
 from .Parsec import Error, MessageType, Ok, Parsec, ParseError, ParseResult, State
-from .Prim import fail, many, many1, pure, skip_many, try_parse
+from .Prim import fail, many, many1, pure, skip_many, skip_while, take_while, take_while1, try_parse
 
 T = TypeVar("T")
 
@@ -131,14 +131,18 @@ class TokenParser:
         self.dot: Parsec[str] = self.symbol(".")
 
         # --- Integers ---
-        self.decimal: Parsec[int] = self.lexeme(many1(digit()).map(lambda ds: int("".join(ds))))
+        self.decimal: Parsec[int] = self.lexeme(take_while1(str.isdigit).map(int))
 
         self.hexadecimal: Parsec[int] = self.lexeme(
-            (one_of(["x", "X"]) >> many1(hex_digit())).map(lambda ds: int("".join(ds), 16))
+            (one_of(["x", "X"]) >> take_while1(lambda c: c in "0123456789abcdefABCDEF")).map(
+                lambda s: int(s, 16)
+            )
         )
 
         self.octal: Parsec[int] = self.lexeme(
-            (one_of(["o", "O"]) >> many1(oct_digit())).map(lambda ds: int("".join(ds), 8))
+            (one_of(["o", "O"]) >> take_while1(lambda c: c in "01234567")).map(
+                lambda s: int(s, 8)
+            )
         )
 
         self.natural: Parsec[int] = self.lexeme(
@@ -158,7 +162,7 @@ class TokenParser:
 
         # --- Floats ---
         def fraction() -> Parsec[str]:
-            return char(".") >> many1(digit()).map(lambda ds: "." + "".join(ds))
+            return char(".") >> take_while1(str.isdigit).map(lambda ds: "." + ds)
 
         def exponent() -> Parsec[str]:
             return one_of(["e", "E"]) >> option("", one_of(["+", "-"])).bind(
@@ -166,15 +170,15 @@ class TokenParser:
             )
 
         def float_val() -> Parsec[float]:
-            return many1(digit()).bind(
+            return take_while1(str.isdigit).bind(
                 lambda ds: choice(
                     [
                         fraction().bind(
                             lambda f: option("", exponent()).map(
-                                lambda e: float("".join(ds) + f + e)
+                                lambda e: float(ds + f + e)
                             )
                         ),
-                        exponent().map(lambda e: float("".join(ds) + e)),
+                        exponent().map(lambda e: float(ds + e)),
                     ]
                 )
             )
@@ -210,9 +214,46 @@ class TokenParser:
             between(char("'"), char("'"), string_char("'"))
         )
 
-        self.string_literal: Parsec[str] = self.lexeme(
-            between(char('"'), char('"'), many(string_char('"'))).map(lambda chars: "".join(chars))
-        )
+        def _bulk_string(quote: str) -> Parsec[str]:
+            """Parse a string literal using bulk scanning for non-special chars."""
+            chunk = take_while(lambda c: c != quote and c != "\\")
+
+            def _string_body_loop(state: State) -> ParseResult[str]:
+                parts: list[str] = []
+                current_state = state
+                consumed_any = False
+
+                while True:
+                    # Bulk scan non-special characters
+                    chunk_res = chunk(current_state)
+                    if isinstance(chunk_res.reply, Ok) and chunk_res.consumed:
+                        parts.append(chunk_res.reply.value)
+                        current_state = chunk_res.reply.state
+                        consumed_any = True
+
+                    # Try escape sequence
+                    esc_res = escape_code()(current_state)
+                    if isinstance(esc_res.reply, Ok) and esc_res.consumed:
+                        parts.append(esc_res.reply.value)
+                        current_state = esc_res.reply.state
+                        consumed_any = True
+                        continue
+
+                    # Neither chunk nor escape matched — we're done
+                    break
+
+                result = "".join(parts)
+                if consumed_any:
+                    return ParseResult.ok_consumed(
+                        result, current_state, ParseError.new_unknown(current_state.pos)
+                    )
+                return ParseResult.ok_empty(
+                    result, current_state, ParseError.new_unknown(current_state.pos)
+                )
+
+            return between(char(quote), char(quote), Parsec(_string_body_loop))
+
+        self.string_literal: Parsec[str] = self.lexeme(_bulk_string('"'))
 
         # --- Identifiers ---
         self.identifier: Parsec[str] = self.lexeme(self._make_identifier())
@@ -453,10 +494,12 @@ class TokenParser:
 
     def _make_white_space(self) -> Parsec[None]:
         if not self.lang.comment_start and not self.lang.comment_line:
-            return skip_many(space())
+            return skip_while(str.isspace)
+
+        from .Prim import skip_while1
 
         # Fix: Annotate list to handle Parsec[str] and Parsec[None] variance issue
-        parsers: List[Parsec[Any]] = [space()]
+        parsers: List[Parsec[Any]] = [skip_while1(str.isspace)]
 
         if self.lang.comment_line:
             line_comment = try_parse(string(self.lang.comment_line)) >> skip_many(

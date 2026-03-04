@@ -3,6 +3,8 @@ from pyparsec.Language import python_style
 from pyparsec.Prim import lazy, pure, run_parser, try_parse
 from pyparsec.Token import TokenParser
 
+import argparse 
+
 # 1. Lexer Setup
 # JSON is very similar to Python style (identifiers, strings, numbers)
 lexer = TokenParser(python_style)
@@ -50,7 +52,11 @@ def json_object():
 parser = json_value()
 
 if __name__ == "__main__":
-    with open("examples/json_example.json") as f:
+    args = argparse.ArgumentParser()
+    args.add_argument("file", help="File to parse")
+    args = args.parse_args()
+
+    with open(args.file) as f:
         test_json = f.read()
 
     result, err = run_parser(parser, test_json)

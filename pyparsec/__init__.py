@@ -55,7 +55,22 @@ from .Expr import Assoc, Infix, Operator, Postfix, Prefix, build_expression_pars
 # Standard Language Definitions
 from .Language import empty_def, haskell_style, java_style, python_style
 from .Parsec import Parsec, ParseError, SourcePos, State
-from .Prim import fail, lazy, many, many1, pure, run_parser, skip_many, token, tokens, try_parse
+from .Prim import (
+    fail,
+    lazy,
+    many,
+    many1,
+    pure,
+    run_parser,
+    skip_many,
+    skip_while,
+    skip_while1,
+    take_while,
+    take_while1,
+    token,
+    tokens,
+    try_parse,
+)
 
 # Lexer Generation (Token)
 from .Token import LanguageDef, TokenParser
@@ -128,6 +143,10 @@ __all__ = [
     "pure",
     "run_parser",
     "skip_many",
+    "skip_while",
+    "skip_while1",
+    "take_while",
+    "take_while1",
     "token",
     "tokens",
     "try_parse",
