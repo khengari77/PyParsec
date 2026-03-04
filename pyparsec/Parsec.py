@@ -534,7 +534,11 @@ class Parsec(Generic[T]):
                 :class:`ParseResult`.
         """
         self.parse_fn = parse_fn
-        self.name = getattr(parse_fn, "__name__", "lambda_parser")
+
+    @property
+    def name(self) -> str:
+        """Descriptive name for debugging."""
+        return getattr(self.parse_fn, "__name__", "lambda_parser")
 
     def __call__(self, state: State) -> ParseResult[T]:
         """Run this parser on the given state.
@@ -660,7 +664,21 @@ class Parsec(Generic[T]):
             >>> run_parser(char('a') > char('b'), "ab")[0]
             'b'
         """
-        return self.bind(lambda _: other)
+        def parse(state: State) -> ParseResult[U]:
+            res_self = self(state)
+            if isinstance(res_self.reply, Error):
+                return ParseResult(res_self.reply, res_self.consumed)
+            ok_self: Ok[T] = res_self.reply
+            res_other = other(ok_self.state)
+            consumed = res_self.consumed or res_other.consumed
+            if isinstance(res_other.reply, Error):
+                merged = ParseError.merge(ok_self.error, res_other.reply.error)
+                return ParseResult(Error(merged), consumed)
+            ok_other: Ok[U] = res_other.reply
+            merged = ParseError.merge(ok_self.error, ok_other.error)
+            return ParseResult(Ok(ok_other.value, ok_other.state, merged), consumed)
+
+        return Parsec(parse)
 
     def __lt__(self, other: "Parsec[U]") -> "Parsec[T]":
         """Sequence two parsers, discarding the right result.
@@ -677,7 +695,21 @@ class Parsec(Generic[T]):
             >>> run_parser(char('a') < char('b'), "ab")[0]
             'a'
         """
-        return self.bind(lambda val_t: other.bind(lambda _: _pure(val_t)))
+        def parse(state: State) -> ParseResult[T]:
+            res_self = self(state)
+            if isinstance(res_self.reply, Error):
+                return ParseResult(res_self.reply, res_self.consumed)
+            ok_self: Ok[T] = res_self.reply
+            res_other = other(ok_self.state)
+            consumed = res_self.consumed or res_other.consumed
+            if isinstance(res_other.reply, Error):
+                merged = ParseError.merge(ok_self.error, res_other.reply.error)
+                return ParseResult(Error(merged), consumed)
+            ok_other: Ok[U] = res_other.reply
+            merged = ParseError.merge(ok_self.error, ok_other.error)
+            return ParseResult(Ok(ok_self.value, ok_other.state, merged), consumed)
+
+        return Parsec(parse)
 
     def __rshift__(self, other: Union["Parsec[U]", Callable[[T], "Parsec[U]"]]) -> "Parsec[U]":
         """Polymorphic sequencing / bind operator (``>>``).
@@ -700,10 +732,8 @@ class Parsec(Generic[T]):
             'a'
         """
         if isinstance(other, Parsec):
-            # Sequence logic: self *> other
-            return self.bind(lambda _: other)
+            return self.__gt__(other)
 
-        # Bind logic: self >>= other
         return self.bind(other)
 
     def label(self, msg: str) -> "Parsec[T]":
@@ -726,17 +756,17 @@ class Parsec(Generic[T]):
             True
         """
 
+        expect_msg = Message(MessageType.EXPECT, msg)
+
         def parse(state: State) -> ParseResult[T]:
             res = self(state)
-            # Only update error if it is an Empty Error
-            if isinstance(res.reply, Error) and not res.consumed:
-                current_messages = res.reply.error.messages
-                non_expect = [m for m in current_messages if m.type != MessageType.EXPECT]
-                new_msgs = non_expect + [Message(MessageType.EXPECT, msg)]
-
-                final_err = ParseError(state.pos, sorted(list(set(new_msgs))))
-                return ParseResult.error_empty(final_err)
-            return res
+            if res.consumed or isinstance(res.reply, Ok):
+                return res
+            # Empty Error — rewrite expect messages
+            current_messages = res.reply.error.messages
+            non_expect = [m for m in current_messages if m.type != MessageType.EXPECT]
+            non_expect.append(expect_msg)
+            return ParseResult(Error(ParseError(state.pos, non_expect)), False)
 
         return Parsec(parse)
 
@@ -755,7 +785,14 @@ class Parsec(Generic[T]):
             >>> run_parser(char('a').map(str.upper), "a")[0]
             'A'
         """
-        return self.bind(lambda x: _pure(f(x)))
+        def parse(state: State) -> ParseResult[U]:
+            res = self(state)
+            if isinstance(res.reply, Ok):
+                ok = res.reply
+                return ParseResult(Ok(f(ok.value), ok.state, ok.error), res.consumed)
+            return res
+
+        return Parsec(parse)
 
 
 # _pure exists to avoid a circular import with Prim.pure(); Parsec.py cannot
