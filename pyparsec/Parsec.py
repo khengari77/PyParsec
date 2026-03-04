@@ -8,8 +8,9 @@ This module defines the foundational types used throughout PyParsec:
 - :class:`Ok` / :class:`Error` / :class:`ParseResult` -- parse outcomes
 - :class:`Parsec` -- the central parser combinator type
 """
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, List, Optional, Sequence, Tuple, TypeVar, Union, cast
+from typing import Any, Callable, Generic, Optional, TypeVar, Union, cast
 
 T = TypeVar("T")  # Generic type for parser results
 U = TypeVar("U")  # Generic type for bind mapping
@@ -208,7 +209,7 @@ class Message:
         text: The human-readable message text.
     """
 
-    type: MessageType
+    type: int
     text: str
 
     def __lt__(self, other: "Message") -> bool:
@@ -235,7 +236,7 @@ class ParseError:
     """
 
     pos: SourcePos
-    messages: List[Message] = field(default_factory=list)
+    messages: list[Message] = field(default_factory=list)
 
     def __str__(self) -> str:
         """Format the error as a human-readable string with position and messages.
@@ -292,7 +293,7 @@ class ParseError:
             return ParseError(self.pos, self.messages + [msg])
         return self
 
-    def set_messages(self, msgs: List[Message]) -> "ParseError":
+    def set_messages(self, msgs: list[Message]) -> "ParseError":
         """Return a new :class:`ParseError` with its messages replaced by *msgs*.
 
         Args:
@@ -322,7 +323,7 @@ class ParseError:
         return ParseError(pos, [])
 
     @staticmethod
-    def new_message(pos: SourcePos, msg_type: MessageType, text: str) -> "ParseError":
+    def new_message(pos: SourcePos, msg_type: int, text: str) -> "ParseError":
         """Create an error with a single message at the given position.
 
         Args:
@@ -643,7 +644,7 @@ class Parsec(Generic[T]):
 
     # --- Applicative Functor ---
 
-    def __and__(self, other: "Parsec[U]") -> "Parsec[Tuple[T, U]]":
+    def __and__(self, other: "Parsec[U]") -> "Parsec[tuple[T, U]]":
         """Sequence two parsers and return both results as a tuple.
 
         Args:

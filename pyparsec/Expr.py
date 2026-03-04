@@ -5,7 +5,7 @@ to construct a parser that respects precedence and associativity.
 """
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Callable, Generic, List, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from .Combinators import chainl1, chainr1, choice
 from .Parsec import Parsec
@@ -95,7 +95,7 @@ class Postfix(Operator[T]):
     parser: Parsec[Callable[[T], T]]
 
 
-def build_expression_parser(table: List[List[Operator[T]]], simple_term: Parsec[T]) -> Parsec[T]:
+def build_expression_parser(table: list[list[Operator[T]]], simple_term: Parsec[T]) -> Parsec[T]:
     """Build a parser for expressions with operators at varying precedence levels.
 
     Args:
@@ -125,12 +125,12 @@ def build_expression_parser(table: List[List[Operator[T]]], simple_term: Parsec[
     return term
 
 
-def _make_level_parser(ops: List[Operator[T]], term: Parsec[T]) -> Parsec[T]:
-    infix_r: List[Parsec[Callable[[T, T], T]]] = []
-    infix_l: List[Parsec[Callable[[T, T], T]]] = []
-    infix_n: List[Parsec[Callable[[T, T], T]]] = []
-    prefix: List[Parsec[Callable[[T], T]]] = []
-    postfix: List[Parsec[Callable[[T], T]]] = []
+def _make_level_parser(ops: list[Operator[T]], term: Parsec[T]) -> Parsec[T]:
+    infix_r: list[Parsec[Callable[[T, T], T]]] = []
+    infix_l: list[Parsec[Callable[[T, T], T]]] = []
+    infix_n: list[Parsec[Callable[[T, T], T]]] = []
+    prefix: list[Parsec[Callable[[T], T]]] = []
+    postfix: list[Parsec[Callable[[T], T]]] = []
 
     for op in ops:
         if isinstance(op, Infix):

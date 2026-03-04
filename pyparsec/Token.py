@@ -5,7 +5,7 @@ identifiers, operators, reserved words) and pass it to :class:`TokenParser`
 to get a full set of lexeme-level parsers.
 """
 from dataclasses import dataclass, field
-from typing import Any, List, TypeVar
+from typing import Any, TypeVar
 
 from .Char import (
     any_char,
@@ -62,8 +62,8 @@ class LanguageDef:
     ident_letter: Parsec[str] = satisfy(lambda c: c.isalnum() or c == "_")
     op_start: Parsec[str] = one_of(list(":!#$%&*+./<=>?@\\^|-~"))
     op_letter: Parsec[str] = one_of(list(":!#$%&*+./<=>?@\\^|-~"))
-    reserved_names: List[str] = field(default_factory=list)
-    reserved_op_names: List[str] = field(default_factory=list)
+    reserved_names: list[str] = field(default_factory=list)
+    reserved_op_names: list[str] = field(default_factory=list)
     case_sensitive: bool = True
 
 
@@ -374,7 +374,7 @@ class TokenParser:
         """
         return between(self.symbol("["), self.symbol("]"), p)
 
-    def semi_sep(self, p: Parsec[T]) -> Parsec[List[T]]:
+    def semi_sep(self, p: Parsec[T]) -> Parsec[list[T]]:
         """Parse zero or more occurrences of *p* separated by semicolons.
 
         Args:
@@ -393,7 +393,7 @@ class TokenParser:
         """
         return sep_by(p, self.semi)
 
-    def semi_sep1(self, p: Parsec[T]) -> Parsec[List[T]]:
+    def semi_sep1(self, p: Parsec[T]) -> Parsec[list[T]]:
         """Parse one or more occurrences of *p* separated by semicolons.
 
         Args:
@@ -412,7 +412,7 @@ class TokenParser:
         """
         return sep_by1(p, self.semi)
 
-    def comma_sep(self, p: Parsec[T]) -> Parsec[List[T]]:
+    def comma_sep(self, p: Parsec[T]) -> Parsec[list[T]]:
         """Parse zero or more occurrences of *p* separated by commas.
 
         Args:
@@ -431,7 +431,7 @@ class TokenParser:
         """
         return sep_by(p, self.comma)
 
-    def comma_sep1(self, p: Parsec[T]) -> Parsec[List[T]]:
+    def comma_sep1(self, p: Parsec[T]) -> Parsec[list[T]]:
         """Parse one or more occurrences of *p* separated by commas.
 
         Args:
@@ -495,7 +495,7 @@ class TokenParser:
         from .Prim import skip_while1
 
         # Fix: Annotate list to handle Parsec[str] and Parsec[None] variance issue
-        parsers: List[Parsec[Any]] = [skip_while1(str.isspace)]
+        parsers: list[Parsec[Any]] = [skip_while1(str.isspace)]
 
         if self.lang.comment_line:
             line_comment = try_parse(string(self.lang.comment_line)) >> skip_many(

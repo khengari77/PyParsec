@@ -9,7 +9,7 @@ This module provides combinators that build complex parsers from simpler ones:
 - :func:`many_till` / :func:`not_followed_by` / :func:`eof` -- termination
 - :func:`parser_trace` / :func:`parser_traced` -- debugging
 """
-from typing import Any, Callable, List, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Optional, TypeVar, Union, cast
 
 from .Parsec import Error, MessageType, Ok, Parsec, ParseError, ParseResult, State
 from .Prim import fail, look_ahead, many, many1, pure, token, try_parse
@@ -17,7 +17,7 @@ from .Prim import fail, look_ahead, many, many1, pure, token, try_parse
 T = TypeVar("T")
 
 
-def choice(parsers: List[Parsec[T]]) -> Parsec[T]:
+def choice(parsers: list[Parsec[T]]) -> Parsec[T]:
     """Try each parser in *parsers* in order until one succeeds.
 
     Args:
@@ -62,7 +62,7 @@ def choice(parsers: List[Parsec[T]]) -> Parsec[T]:
     return Parsec(parse)
 
 
-def count(n: int, p: Parsec[T]) -> Parsec[List[T]]:
+def count(n: int, p: Parsec[T]) -> Parsec[list[T]]:
     """Apply *p* exactly *n* times and collect the results.
 
     Args:
@@ -82,7 +82,7 @@ def count(n: int, p: Parsec[T]) -> Parsec[List[T]]:
     if n <= 0:
         return pure([])
 
-    def parse(state_initial: State) -> ParseResult[List[T]]:
+    def parse(state_initial: State) -> ParseResult[list[T]]:
         results = []
         current_state = state_initial
         consumed_overall = False
@@ -215,7 +215,7 @@ def skip_many1(p: Parsec[Any]) -> Parsec[None]:
     return p >> (lambda _: many(p) >> (lambda _: pure(None)))
 
 
-def sep_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
+def sep_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[list[T]]:
     """Parse one or more occurrences of *p* separated by *sep*.
 
     Args:
@@ -235,7 +235,7 @@ def sep_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     return p.bind(lambda x: many(sep >> p).bind(lambda xs: pure([x] + xs)))
 
 
-def sep_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
+def sep_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[list[T]]:
     """Parse zero or more occurrences of *p* separated by *sep*.
 
     Args:
@@ -255,7 +255,7 @@ def sep_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     return sep_by1(p, sep) | pure([])
 
 
-def end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
+def end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[list[T]]:
     """Parse one or more occurrences of *p*, each followed by *sep*.
 
     Args:
@@ -275,7 +275,7 @@ def end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     return many1(p < sep)
 
 
-def end_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
+def end_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[list[T]]:
     """Parse zero or more occurrences of *p*, each followed by *sep*.
 
     Args:
@@ -295,7 +295,7 @@ def end_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     return many(p < sep)
 
 
-def sep_end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
+def sep_end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[list[T]]:
     """Parse one or more occurrences of *p*, separated and optionally ended by *sep*.
 
     Args:
@@ -313,7 +313,7 @@ def sep_end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
         ['a', 'a']
     """
 
-    def parse(state: State) -> ParseResult[List[T]]:
+    def parse(state: State) -> ParseResult[list[T]]:
         res_p = p(state)
         if isinstance(res_p.reply, Error):
             return ParseResult(Error(res_p.reply.error), res_p.consumed)
@@ -365,7 +365,7 @@ def sep_end_by1(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
     return Parsec(parse)
 
 
-def sep_end_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[List[T]]:
+def sep_end_by(p: Parsec[T], sep: Parsec[Any]) -> Parsec[list[T]]:
     """Parse zero or more occurrences of *p*, separated and optionally ended by *sep*.
 
     Args:
@@ -499,7 +499,7 @@ def chainr1(p: Parsec[T], op: Parsec[Callable[[T, T], T]]) -> Parsec[T]:
         512
     """
 
-    def apply_right_associative(scan_results_val: List[Union[T, Callable[[T, T], T]]]) -> T:
+    def apply_right_associative(scan_results_val: list[Union[T, Callable[[T, T], T]]]) -> T:
         if not scan_results_val:
             raise ValueError("Empty chain")
 
@@ -539,16 +539,16 @@ def chainr(p: Parsec[T], op: Parsec[Callable[[T, T], T]], x: T) -> Parsec[T]:
 
 def _scan_op_chain(
     term_parser: Parsec[T], op_parser: Parsec[Callable[[T, T], T]]
-) -> Parsec[List[Union[T, Callable[[T, T], T]]]]:
+) -> Parsec[list[Union[T, Callable[[T, T], T]]]]:
     """Helper for chainr1: parses x (op x)* into a flat list."""
 
-    def parse(state: State) -> ParseResult[List[Union[T, Any]]]:
+    def parse(state: State) -> ParseResult[list[Union[T, Any]]]:
         res_first = term_parser(state)
         if isinstance(res_first.reply, Error):
             return ParseResult(Error(res_first.reply.error), res_first.consumed)
 
         ok_first: Ok[T] = res_first.reply
-        results: List[Union[T, Any]] = [ok_first.value]
+        results: list[Union[T, Any]] = [ok_first.value]
         curr_state = ok_first.state
         consumed = res_first.consumed
         err = ok_first.error
@@ -651,7 +651,7 @@ def eof() -> Parsec[None]:
     return not_followed_by(any_token()).label("end of input")
 
 
-def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[List[T]]:
+def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[list[T]]:
     """Apply *p* zero or more times until *end* succeeds, collecting the results.
 
     The *end* parser is consumed on success. The results of *p* are
@@ -673,7 +673,7 @@ def many_till(p: Parsec[T], end: Parsec[Any]) -> Parsec[List[T]]:
         ['a', 'b', 'c']
     """
 
-    def scan(state: State) -> ParseResult[List[T]]:
+    def scan(state: State) -> ParseResult[list[T]]:
         results: list[T] = []
         curr = state
         consumed = False

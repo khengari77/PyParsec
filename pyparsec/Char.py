@@ -4,7 +4,8 @@ This module provides parsers for single characters (:func:`char`, :func:`satisfy
 character classes (:func:`digit`, :func:`letter`, :func:`space`, etc.), and
 string matching (:func:`string`, :func:`string_prime`).
 """
-from typing import Callable, Optional, Sequence
+from collections.abc import Sequence
+from typing import Callable, Optional
 
 from .Parsec import (
     Parsec,

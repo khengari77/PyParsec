@@ -10,7 +10,8 @@ This module provides the building blocks for all other parsers:
 - :func:`run_parser` / :func:`parse_test` -- running parsers on input
 - :func:`lazy` -- deferred parser construction for recursion
 """
-from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar, Union, cast, overload
+from collections.abc import Sequence
+from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
 from .Parsec import (
     Error,
@@ -249,7 +250,7 @@ def _many_accum(
     return Parsec(parse_accum)
 
 
-def many(p: Parsec[T]) -> Parsec[List[T]]:
+def many(p: Parsec[T]) -> Parsec[list[T]]:
     """Apply *p* zero or more times and collect the results into a list.
 
     Stops when *p* fails without consuming input.
@@ -268,14 +269,14 @@ def many(p: Parsec[T]) -> Parsec[List[T]]:
         ['a', 'a', 'a']
     """
 
-    def _acc(item: T, lst: List[T]) -> List[T]:
+    def _acc(item: T, lst: list[T]) -> list[T]:
         lst.append(item)
         return lst
 
     return _many_accum(_acc, p, [])
 
 
-def many1(p: Parsec[T]) -> Parsec[List[T]]:
+def many1(p: Parsec[T]) -> Parsec[list[T]]:
     """Apply *p* one or more times and collect the results into a list.
 
     Fails if *p* does not succeed at least once.
@@ -294,7 +295,7 @@ def many1(p: Parsec[T]) -> Parsec[List[T]]:
         ['a', 'a']
     """
 
-    def _acc(item: T, lst: List[T]) -> List[T]:
+    def _acc(item: T, lst: list[T]) -> list[T]:
         lst.append(item)
         return lst
 
@@ -327,7 +328,7 @@ def run_parser(
     input_data: Union[str, Sequence[Any]],
     user_state: Any = ...,
     source_name: str = ...,
-) -> Tuple[T, None]: ...
+) -> tuple[T, None]: ...
 
 
 @overload
@@ -336,7 +337,7 @@ def run_parser(
     input_data: Union[str, Sequence[Any]],
     user_state: Any = ...,
     source_name: str = ...,
-) -> Tuple[None, "ParseError"]: ...
+) -> tuple[None, "ParseError"]: ...
 
 
 def run_parser(
@@ -344,7 +345,7 @@ def run_parser(
     input_data: Union[str, Sequence[Any]],
     user_state: Any = None,
     source_name: str = "",
-) -> Tuple[Optional[T], Optional[ParseError]]:
+) -> tuple[Optional[T], Optional[ParseError]]:
     """Run *parser* on *input_data* and return ``(value, error)``.
 
     Exactly one of the two tuple elements will be ``None``.
@@ -428,9 +429,9 @@ def tokens(
             # Ensure type compatibility
             if isinstance(to_match, list):
                 if isinstance(input_stream, str):
-                    target = "".join(cast(List[str], to_match))
+                    target = "".join(cast(list[str], to_match))
                 elif isinstance(input_stream, bytes):
-                    target = bytes(cast(List[bytes], to_match))
+                    target = bytes(cast(list[bytes], to_match))
 
             if input_stream.startswith(target, idx):
                 matched = target
