@@ -10,13 +10,9 @@ from typing import Any, List, TypeVar
 from .Char import (
     any_char,
     char,
-    digit,
-    hex_digit,
     none_of,
-    oct_digit,
     one_of,
     satisfy,
-    space,
     string,
 )
 from .Combinators import (
@@ -29,7 +25,7 @@ from .Combinators import (
     skip_many1,
 )
 from .Parsec import Error, MessageType, Ok, Parsec, ParseError, ParseResult, State
-from .Prim import fail, many, many1, pure, skip_many, skip_while, take_while, take_while1, try_parse
+from .Prim import fail, many, pure, skip_many, skip_while, take_while, take_while1, try_parse
 
 T = TypeVar("T")
 
