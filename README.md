@@ -25,8 +25,10 @@ It is a faithful port of Haskell's legendary **Parsec** library, adapted for Pyt
 This project is managed with `uv` and `hatchling`. You can install it directly from the repository:
 
 ```bash
-pip install git+https://github.com/khengari77/PyParsec.git
+pip install pyarsec
 ```
+
+> `import pyparsec`, `import parsecpy`, `import parsec`, and `import pyarsec` all work.
 
 For development:
 ```bash
